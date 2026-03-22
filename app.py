@@ -5,7 +5,7 @@ st.set_page_config(page_title="Hybrid Marketing Dashboard", layout="wide")
 st.title("🚀 하이브리드 성과 통합 대시보드")
 
 # --- 설정 (본인의 시트 ID를 넣으세요) ---
-SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIxYrj0LSrcaYdgY"
+SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIXYrj0LSrcaYdgY"
 
 TABS = {
     "Naver": "0",
@@ -29,7 +29,7 @@ if st.button("🔄 구글 시트 데이터 실시간 동기화"):
         for name, gid in TABS.items():
             df = get_sheet_data(SHEET_ID, gid)
             if df is not None:
-                # 💡 사용자가 요청한 순서: 일자, 매체, 캠페인명, 노출, 클릭, 채널 친구 수, 광고비
+                # 사용자가 요청한 순서: 일자, 매체, 캠페인명, 노출, 클릭, 채널 친구 수, 광고비
                 cols = ['일자', '매체', '캠페인명', '노출', '클릭', '채널 친구 수', '광고비']
                 
                 # 없는 컬럼은 0 또는 빈값 처리
@@ -45,11 +45,11 @@ if st.button("🔄 구글 시트 데이터 실시간 동기화"):
     if all_data:
         final_df = pd.concat(all_data, ignore_index=True)
         
-        # 날짜순 정렬 (일자 컬럼이 날짜 형식일 경우)
+        # 날짜순 정렬
         final_df['일자'] = pd.to_datetime(final_df['일자'], errors='coerce').dt.date
         final_df = final_df.sort_values(by='일자', ascending=False)
         
-        st.success(f"✅ 데이터를 성공적으로 불러왔습니다!")
+        st.success("✅ 데이터를 성공적으로 불러왔습니다!")
         
         # 상단 요약 지표
         c1, c2, c3, c4 = st.columns(4)
@@ -62,4 +62,9 @@ if st.button("🔄 구글 시트 데이터 실시간 동기화"):
         st.subheader("📊 통합 매체 성과 리포트")
         st.dataframe(final_df, use_container_width=True)
     else:
-        st.error("⚠️ 데이터를 불러오지 못했습니다. 구글 시트의 헤더명(일자,
+        st.error("⚠️ 데이터를 불러오지 못했습니다. 구글 시트의 헤더명이 정확한지 확인해 주세요.")
+
+st.sidebar.markdown("### 📅 데이터 입력 팁")
+st.sidebar.write("- 일자: 2026-03-22 형식")
+st.sidebar.write("- 매체: 네이버, 메타 등")
+st.sidebar.write("- 광고비: 숫자만 입력")
