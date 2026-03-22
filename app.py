@@ -13,7 +13,7 @@ if st.button("🔄 데이터 강제 동기화 (Sync)"):
 st.divider()
 
 # --- 설정: 본인의 시트 ID 및 Adobe GID ---
-SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIXYrj0LSrcaYdgY"
+SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIxYrj0LSrcaYdgY"
 NAVER_GID = "0"
 ADOBE_GID = "1818457274"
 
