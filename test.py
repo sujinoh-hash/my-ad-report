@@ -6,7 +6,7 @@ st.set_page_config(page_title="6만행 매핑 최종 검증기", layout="wide")
 
 # 1. 시트 설정
 SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIxYrj0LSrcaYdgY"
-MAPPING_GID = "1901484506"
+MAPPING_GID = "1901484506" 
 
 def build_perfect_key(cid):
     if pd.isna(cid): return "Unknown"
