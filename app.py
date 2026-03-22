@@ -6,7 +6,7 @@ st.title("🚀 하이브리드 성과 통합 대시보드")
 
 # --- 설정 (여기에 본인의 구글 시트 주소를 넣으세요) ---
 # 시트 주소 예시: https://docs.google.com/spreadsheets/d/시트아이디/edit#gid=0
-SHEET_ID = 1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIxYrj0LSrcaYdgY
+SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIxYrj0LSrcaYdgY"
 
 # 각 탭의 GID (주소창 끝에 gid= 다음에 나오는 숫자입니다)
 TABS = {
