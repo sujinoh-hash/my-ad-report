@@ -20,83 +20,81 @@ def load_data(uploaded_file):
     return None
 
 def find_actual_header(df, keywords):
-    """파일 상단의 불필요한 행을 건너뛰고 진짜 제목줄을 찾는 함수"""
+    if df is None: return None
+    # 데이터프레임의 상위 30줄을 뒤져서 키워드가 있는 행을 찾음
     for i in range(len(df)):
         row_values = [str(v).strip() for v in df.iloc[i].values]
-        # 키워드 중 하나라도 해당 행에 있으면 그 줄이 헤더!
-        if any(k in row_values for k in keywords):
+        row_text = " ".join(row_values)
+        if any(k in row_text for k in keywords):
             new_df = df.iloc[i+1:].copy()
             new_df.columns = row_values
             return new_df.reset_index(drop=True)
     return df
 
-def process_and_clean(df, mapping, keywords):
+def process_and_clean(df, mapping, keywords, media_name):
     if df is None or df.empty: return None
     
-    # 1. 진짜 헤더 찾기 (아까 사진처럼 제목이 위에 있는 경우 해결)
+    # 1. 헤더 탐색 (네이버 등의 복잡한 상단 제목 건너뛰기)
     df = find_actual_header(df, keywords)
     
-    # 2. 항목명 통일
+    # 2. 제목 공백 제거 및 매핑
+    df.columns = [str(c).strip() for c in df.columns]
     df = df.rename(columns=mapping)
     
-    # 3. 필요한 컬럼만 추출
-    target_cols = ['날짜', '캠페인명', '광고비', '노출', '클릭']
+    # 3. 요청하신 필수 컬럼 설정 (순서 고정)
+    df['매체'] = media_name
+    target_cols = ['매체', '캠페인명', '노출', '클릭', '채널 친구 수', '광고비']
+    
+    # 없는 컬럼은 0으로 생성 (예: 네이버엔 '채널 친구 수'가 없으므로 0 처리)
     for c in target_cols:
-        if c not in df.columns: df[c] = 0
+        if c not in df.columns:
+            df[c] = 0
             
-    # 4. 숫자 데이터 정제 (콤마, 문자 제거)
-    for c in ['광고비', '노출', '클릭']:
+    # 4. 숫자 데이터 정제
+    for c in ['노출', '클릭', '채널 친구 수', '광고비']:
         df[c] = pd.to_numeric(df[c].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
         
     return df[target_cols]
 
 # --- 사이드바 ---
-st.sidebar.header("📁 데이터 업로드")
-up_naver = st.sidebar.file_uploader("1. 네이버 리포트")
-up_meta = st.sidebar.file_uploader("2. 메타 리포트")
-up_kakao = st.sidebar.file_uploader("3. 카카오 리포트")
-up_adobe = st.sidebar.file_uploader("4. 어도비 리포트")
+st.sidebar.header("📁 매체 리포트 업로드")
+up_naver = st.sidebar.file_uploader("1. 네이버")
+up_meta = st.sidebar.file_uploader("2. 메타")
+up_kakao = st.sidebar.file_uploader("3. 카카오")
 
 if st.sidebar.button("🚀 통합 분석 시작"):
     combined_list = []
     
-    # 네이버
+    # 네이버 (항목: 일별, 캠페인, 총비용 등)
     if up_naver:
-        d = process_and_clean(load_data(up_naver), {'일별':'날짜', '캠페인':'캠페인명', '노출수':'노출', '클릭수':'클릭', '총비용(VAT포함,원)':'광고비'}, ['일별', '캠페인', '총비용'])
+        d = process_and_clean(load_data(up_naver), 
+                              {'일별':'날짜', '캠페인':'캠페인명', '노출수':'노출', '클릭수':'클릭', '총비용(VAT포함,원)':'광고비'}, 
+                              ['일별', '총비용', '캠페인'], "네이버")
         if d is not None: combined_list.append(d)
         
-    # 메타
+    # 메타 (항목: 캠페인 이름, 지출 금액 등)
     if up_meta:
-        d = process_and_clean(load_data(up_meta), {'일':'날짜', '캠페인 이름':'캠페인명', '지출 금액 (KRW)':'광고비', '클릭(전체)':'클릭'}, ['캠페인 이름', '지출 금액'])
+        d = process_and_clean(load_data(up_meta), 
+                              {'캠페인 이름':'캠페인명', '지출 금액 (KRW)':'광고비', '클릭(전체)':'클릭'}, 
+                              ['캠페인 이름', '지출 금액'], "메타")
         if d is not None: combined_list.append(d)
         
-    # 카카오
+    # 카카오 (항목: 캠페인 이름, 비용, 채널 추가 등)
     if up_kakao:
-        d = process_and_clean(load_data(up_kakao), {'일':'날짜', '캠페인 이름':'캠페인명', '비용':'광고비', '노출수':'노출', '클릭수':'클릭'}, ['비용', '캠페인 이름'])
+        # 카카오의 경우 '채널 추가' 항목이 있으면 '채널 친구 수'로 매핑
+        d = process_and_clean(load_data(up_kakao), 
+                              {'캠페인 이름':'캠페인명', '비용':'광고비', '노출수':'노출', '클릭수':'클릭', '채널 추가':'채널 친구 수'}, 
+                              ['비용', '캠페인 이름'], "카카오")
         if d is not None: combined_list.append(d)
 
     if combined_list:
-        media_df = pd.concat(combined_list, ignore_index=True)
+        final_df = pd.concat(combined_list, ignore_index=True)
+        st.success("✅ 매체 데이터 통합 완료!")
         
-        # 어도비 처리
-        raw_adobe = load_data(up_adobe)
-        if raw_adobe is not None:
-            df_adobe = find_actual_header(raw_adobe, ['Revenue', '방문 횟수', 'Orders'])
-            if not df_adobe.empty:
-                # 첫 번째 열을 캠페인명으로 강제 지정
-                df_adobe = df_adobe.rename(columns={df_adobe.columns[0]: '캠페인명', 'Revenue':'매출'})
-                df_adobe['매출'] = pd.to_numeric(df_adobe['매출'].astype(str).str.replace(r'[^\d.]', '', regex=True), errors='coerce').fillna(0)
-                
-                # 병합
-                final_df = pd.merge(media_df, df_adobe[['캠페인명', '매출']], on='캠페인명', how='left').fillna(0)
-                st.success("✅ 모든 데이터 통합 완료!")
-                st.dataframe(final_df)
-                st.metric("총 통합 광고비", f"{final_df['광고비'].sum():,.0f}원")
-                st.metric("총 통합 매출", f"{final_df['매출'].sum():,.0f}원")
-            else:
-                st.dataframe(media_df)
-        else:
-            st.success("✅ 매체 데이터 통합 완료")
-            st.dataframe(media_df)
+        # 총액 요약
+        st.metric("통합 총 광고비", f"{final_df['광고비'].sum():,.0f}원")
+        
+        # 결과 표 (사용자 요청 순서 반영)
+        st.dataframe(final_df)
     else:
         st.warning("파일을 먼저 업로드해주세요.")
