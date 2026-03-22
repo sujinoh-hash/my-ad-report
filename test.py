@@ -6,7 +6,7 @@ st.set_page_config(page_title="6만행 전수 검사 (완결판)", layout="wide"
 
 # 1. 시트 설정
 SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIxYrj0LSrcaYdgY"
-MAPPING_GID = "1901484506 
+MAPPING_GID = "1901484506"
 
 def has_token(text, token):
     # 단어가 앞뒤로 시작/끝/_/-로 구분될 때만 True (정규식 강화)
