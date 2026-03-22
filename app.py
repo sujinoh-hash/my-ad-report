@@ -4,7 +4,7 @@ import plotly.express as px
 
 st.set_page_config(page_title="Smart Marketing Dashboard", layout="wide")
 
-st.title("📊 통합 성과 대시보드 (자동 정제 버전)")
+st.title("📊 통합 성과 대시보드 (오류 수정 버전)")
 
 # 동기화 버튼
 if st.button("🔄 데이터 실시간 동기화 (Sync)"):
@@ -14,37 +14,36 @@ if st.button("🔄 데이터 실시간 동기화 (Sync)"):
 st.divider()
 
 # --- 1. 설정: 시트 ID 및 GID ---
-SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIxYrj0LSrcaYdgY"
-MEDIA_GID = "0"          # 광고 데이터 탭
-ADOBE_GID = "1818457274"  # 어도비 데이터 탭
+SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIXYrj0LSrcaYdgY"
+MEDIA_GID = "0"          # 광고 데이터 탭 (Media)
+ADOBE_GID = "1818457274"  # 어도비 데이터 탭 (Adobe)
 
-# --- 2. 데이터 정제 함수 (날짜 & 특정 매체명 통합) ---
+# --- 2. 데이터 정제 함수 ---
 def clean_data(df, is_adobe=False):
     if df is None or df.empty: return None
     
-    # 컬럼 구조 잡기
+    # [수정포인트] 컬럼 개수 맞추기
     if is_adobe:
-        # 어도비: 일자, 매체, 캠페인명, 방문수, 장바구니수, 주문수, 매출액 (7개 가정)
-        df = df.iloc[:, :7].copy()
-        df.columns = ['일자', '매체', '캠페인명', '방문수', '장바구니수', '주문수', '매출액']
+        # 어도비: 일자, 캠페인명, 방문수, 장바구니수, 주문수, 매출액 (총 6개)
+        df = df.iloc[:, :6].copy()
+        df.columns = ['일자', '캠페인명', '방문수', '장바구니수', '주문수', '매출액']
     else:
-        # 광고: 일자, 매체, 캠페인명, 노출, 클릭, 채널 친구 수, 광고비 (7개)
+        # 광고: 일자, 매체, 캠페인명, 노출, 클릭, 채널 친구 수, 광고비 (총 7개)
         df = df.iloc[:, :7].copy()
         df.columns = ['일자', '매체', '캠페인명', '노출', '클릭', '채널 친구 수', '광고비']
 
-    # [날짜 정제] 점(.)을 하이픈(-)으로 바꾸고 날짜 형식으로 변환 (네이버/메타 혼용 해결)
+    # 날짜 정제 (점/하이픈 자동 변환)
     df['일자'] = df['일자'].astype(str).str.strip().str.replace('.', '-', regex=False)
     df['일자'] = pd.to_datetime(df['일자'], errors='coerce').dt.date
-    df = df.dropna(subset=['일자']) # 날짜 없는 행 제거
+    df = df.dropna(subset=['일자'])
 
     # [특정 매체명 통합] navershopping_m, navershopping_w만 'Naver shopping'으로 변경
     if '매체' in df.columns:
         df['매체'] = df['매체'].astype(str).str.strip()
         target_names = ['navershopping_m', 'navershopping_w']
-        # 해당 이름들만 변경하고 나머지는 유지
         df.loc[df['매체'].isin(target_names), '매체'] = 'Naver shopping'
 
-    # [숫자 정제] 콤마 제거 및 숫자 변환
+    # 숫자 정제 (콤마 제거)
     num_cols = ['방문수', '장바구니수', '주문수', '매출액'] if is_adobe else ['노출', '클릭', '광고비']
     for c in num_cols:
         if c in df.columns:
@@ -70,13 +69,11 @@ adobe_df = clean_data(adobe_raw, is_adobe=True)
 
 # --- 4. 대시보드 메인 로직 ---
 if ad_df is not None and not ad_df.empty:
-    # 사이드바 필터
     st.sidebar.header("🔍 검색 필터")
     
     # 날짜 필터
     all_dates = sorted(ad_df['일자'].unique())
-    if all_dates:
-        date_range = st.sidebar.date_input("조회 기간", [min(all_dates), max(all_dates)])
+    date_range = st.sidebar.date_input("조회 기간", [min(all_dates), max(all_dates)])
     
     # 매체 필터
     media_list = ['전체'] + sorted(list(ad_df['매체'].unique()))
@@ -91,32 +88,35 @@ if ad_df is not None and not ad_df.empty:
 
     if selected_media != '전체':
         f_ad = f_ad[f_ad['매체'] == selected_media]
-        if not f_adobe.empty:
-            f_adobe = f_adobe[f_adobe['매체'] == selected_media]
+    
+    # [중요] 캠페인명 기반으로 광고 데이터와 어도비 데이터 매칭
+    target_campaigns = f_ad['캠페인명'].unique()
+    f_adobe_matched = f_adobe[f_adobe['캠페인명'].isin(target_campaigns)] if not f_adobe.empty else pd.DataFrame()
 
     # --- 5. 지표 계산 및 출력 ---
     total_spend = f_ad['광고비'].sum()
-    total_rev = f_adobe['매출액'].sum() if not f_adobe.empty else 0
+    total_rev = f_adobe_matched['매출액'].sum() if not f_adobe_matched.empty else 0
     roas = (total_rev / total_spend * 100) if total_spend > 0 else 0
 
     m1, m2, m3 = st.columns(3)
     m1.metric(f"💰 {selected_media} 광고비", f"{total_spend:,.0f}원")
-    m2.metric(f"💵 연동 매출액", f"{total_rev:,.0f}원")
+    m2.metric(f"💵 연동 매출액 (Adobe)", f"{total_rev:,.0f}원")
     m3.metric("📈 ROAS", f"{roas:,.1f}%")
 
     st.divider()
 
-    # 그래프
-    col1, col2 = st.columns(2)
-    with col1:
-        st.plotly_chart(px.pie(f_ad, values='광고비', names='매체', title="매체별 비중", hole=0.4), use_container_width=True)
-    with col2:
-        daily_trend = f_ad.groupby('일자')['광고비'].sum().reset_index()
-        st.plotly_chart(px.line(daily_trend, x='일자', y='광고비', title="일자별 광고비 추이", markers=True), use_container_width=True)
-
-    # 상세 성과 표
-    st.subheader("📋 성과 상세 데이터")
-    st.dataframe(f_ad.sort_values('일자', ascending=False), use_container_width=True)
+    # 상세 성과 표 (캠페인별 합산)
+    st.subheader("📋 캠페인별 성과 요약")
+    ad_sum = f_ad.groupby('캠페인명')['광고비'].sum().reset_index()
+    if not f_adobe_matched.empty:
+        adobe_sum = f_adobe_matched.groupby('캠페인명')[['방문수', '주문수', '매출액']].sum().reset_index()
+        final_table = pd.merge(ad_sum, adobe_sum, on='캠페인명', how='left').fillna(0)
+    else:
+        final_table = ad_sum
+        for col in ['방문수', '주문수', '매출액']: final_table[col] = 0
+    
+    final_table['ROAS(%)'] = (final_table['매출액'] / final_table['광고비'] * 100).fillna(0)
+    st.dataframe(final_table.sort_values('광고비', ascending=False), use_container_width=True)
 
 else:
-    st.error("데이터를 불러올 수 없습니다. 시트의 공유 설정과 GID를 확인하세요.")
+    st.error("데이터를 불러오지 못했습니다. 시트 설정을 확인하세요.")
