@@ -63,7 +63,7 @@ def build_perfect_key(cid):
 st.title("🚀 맵핑 데이터 전수 검사 (KeyError 방지)")
 
 # 시트 설정 (ID와 GID가 맵핑 탭이 맞는지 꼭 확인하세요!)
-SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIXYrj0LSrcaYdgY"
+SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIxYrj0LSrcaYdgY"
 # 맵핑 탭의 GID를 여기에 넣으세요 (어도비 탭 GID와 다를 수 있습니다)
 MAPPING_GID = "1901484506" 
 
