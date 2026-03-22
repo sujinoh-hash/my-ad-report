@@ -2,14 +2,14 @@ import streamlit as st
 import pandas as pd
 import re
 
-st.set_page_config(page_title="6만행 전수 검사 (최종)", layout="wide")
+st.set_page_config(page_title="6만행 전수 검사 (완결판)", layout="wide")
 
 # 1. 시트 설정
 SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIxYrj0LSrcaYdgY"
-MAPPING_GID = "1901484506"  # 맵핑 탭의 GID
+MAPPING_GID = "1901484506 
 
 def has_token(text, token):
-    # 단어가 앞뒤로 [시작, 끝, _, -]로 확실히 구분될 때만 True
+    # 단어가 앞뒤로 시작/끝/_/-로 구분될 때만 True (정규식 강화)
     return re.search(rf'(^|[_-]){re.escape(token)}([_-]|$)', text) is not None
 
 def build_perfect_key(cid):
@@ -17,13 +17,11 @@ def build_perfect_key(cid):
     cid_raw = str(cid).strip()
     cid_low = cid_raw.lower()
 
+    # 0. 필터링
     if cid_raw == "" or "_adef-" in cid_low: return "Unknown"
     if cid_low == "sms_senders": return "SMS_Senders"
     if "navershopping" in cid_low: return "Naver shopping"
     
-    # [특수] 브랜드존 일회성 코드 Unknown 처리
-    if "ps_naver" in cid_low and "daily" in cid_low: return "Unknown"
-
     # 1. 매체(Media) 판별
     media = "google"
     if any(x in cid_low for x in ["brandzone", "naverbsp", "ps_naver"]):
@@ -45,44 +43,61 @@ def build_perfect_key(cid):
         elif "pmaxm" in cid_low: media = "pmaxM"
         else: media = "pmaxC"
     elif "kakao-kw" in cid_low or "kakaotalksa" in cid_low: media = "kakaotalksa"
+    elif "kakaopn" in cid_low or "transactional" in cid_low: media = "kakaooptin"
     elif "naverpc" in cid_low: media = "naverpc"
     elif "navermo" in cid_low: media = "navermo"
     elif "criteo" in cid_low: media = "criteo"
 
-    # 2. 캠페인 Prefix (사용자 가이드 반영)
+    # 2. 캠페인 Prefix (우선순위 정밀 조정)
     camp = "alwayson"
+
+    # [Priority 1] 특별 상품 키워드
+    if any(x in cid_low for x in ["steadystate", "becalm", "bigcozy"]):
+        camp = "Holiday"
     
-    # [A] 특정 매체 그룹 (dsp_naver, dsp_kakao, smp_fbig) 전용 로직
-    if media in ["kakaoda", "kakaodaC", "kakaodaD", "meta", "metaC", "metam3", "naverda"]:
-        if any(x in cid_low for x in ["steadystate", "becalm", "bigcozy"]):
-            camp = "Holiday"
-        elif "logorun" in cid_low or "_run_" in cid_low:
-            camp = "Run"
-        elif "train-winter2025-train" in cid_low or "train2025" in cid_low:
-            camp = "Train"
-        elif "bottoms-spring2026-otm" in cid_low or "pants" in cid_low:
-            # [규칙] naverda만 소문자 pants
-            camp = "pants" if media == "naverda" else "Pants"
-        elif "yet-spring2026-run" in cid_low:
-            camp = "26Run"
-        elif "holiday-winter2025-general" in cid_low:
-            camp = "Holiday"
-        # 그 외에는 모두 alwayson (brand, activity 판별 안 함)
-    else:
-        # [B] 그 외 매체 (google, YouTube 등)
-        if has_token(cid_low, "product"): camp = "product"
-        elif has_token(cid_low, "activity"): camp = "activity"
-        elif has_token(cid_low, "brand"): camp = "brand"
+    # [Priority 2] 명시적 로고런 (winter-2026 등이 있어도 Run이 이김)
+    elif "logorun" in cid_low:
+        camp = "Run"
+
+    # [Priority 3] 구체적 캠페인 태그
+    elif "yet-spring2026-run" in cid_low:
+        camp = "26Run"
+    elif "bottoms-spring2026-otm" in cid_low:
+        camp = "pants" if media == "naverda" else "Pants"
+    elif "train-winter2025-train" in cid_low:
+        camp = "Train"
+    elif "holiday-winter2025-general" in cid_low:
+        camp = "Holiday"
+    elif "men-2026-alwayson" in cid_low:
+        camp = "men"
+    
+    # [Priority 4] 시즌형 Alwayson 쉴드 (일반 run/casual 키워드보다 강함)
+    elif any(x in cid_low for x in ["winter-2026-alwayson", "spring-2026-alwayson"]):
+        camp = "alwayson"
+
+    # [Priority 5] 일반 키워드 판별
+    elif "_run_" in cid_low or "run" in cid_low:
+        camp = "Run"
+    elif "pants" in cid_low:
+        camp = "pants" if media == "naverda" else "Pants"
+
+    # [Priority 6] DA/Meta 외 매체용 (product/activity/brand)
+    if media not in ["kakaoda", "kakaodaC", "kakaodaD", "meta", "metaC", "metam3", "naverda"]:
+        if camp == "alwayson":
+            if has_token(cid_low, "product"): camp = "product"
+            elif has_token(cid_low, "activity"): camp = "activity"
+            elif has_token(cid_low, "brand"): camp = "brand"
 
     # 3. 단계(Funnel)
     lvl = "middle-dm"
     if has_token(cid_low, "upper"): lvl = "upper-dm"
     elif has_token(cid_low, "lower"): lvl = "lower-dm"
 
-    # [규칙] naverda 매체는 lower를 middle로 고정
+    # [사용자 요청] naverda 매체만 lower -> middle 변환
     if media == "naverda" and lvl == "lower-dm":
         lvl = "middle-dm"
 
+    # 브랜드검색 단계 고정
     if any(x in cid_low for x in ["brandzone", "naverbsp", "ps_naver", "kakaobsp"]):
         lvl = "BS-dm"
 
@@ -91,15 +106,18 @@ def build_perfect_key(cid):
     if media in ["naverpc", "navermo", "kakaotalksa", "naverbsmo", "naverbspc", "kakaobsmo", "kakaobspc"]:
         target = "pro"
 
+    # 5. 특수 매체 최종 조립 (카카오 옵트인)
+    if media == "kakaooptin":
+        suffix = "transactional" if "transactional" in cid_low else "kakaopn"
+        return f"alwayson-lower-dm-kakaooptin-{suffix}"
+
     return f"{camp}-{lvl}-{target}-{media}"
 
-# --- 실행부 ---
-if st.button("🚀 시트 연결 및 전수 검사 시작"):
+# --- 실행 UI ---
+if st.button("🚀 최종 로직으로 전수 검사 시작"):
     try:
-        # gid 파라미터를 포함하여 정확한 탭 연결
-        csv_url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={MAPPING_GID}"
-        df = pd.read_csv(csv_url)
-        
+        url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={MAPPING_GID}"
+        df = pd.read_csv(url)
         df.columns = [c.strip() for c in df.columns]
         cid_col = next((c for c in df.columns if 'CID' in c.upper()), None)
         camp_col = next((c for c in df.columns if '캠페인명' in c), None)
@@ -110,14 +128,11 @@ if st.button("🚀 시트 연결 및 전수 검사 시작"):
                 df['일치여부'] = df.apply(lambda x: "✅ 일치" if str(x[camp_col]).strip() == str(x['AI_조립결과']).strip() else "❌ 불일치", axis=1)
                 mismatches = df[df['일치여부'] == "❌ 불일치"]
                 
-                st.success(f"연결 완료! 일치: {len(df)-len(mismatches):,} / 불일치: {len(mismatches):,}")
+                st.success(f"분석 완료! 일치: {len(df)-len(mismatches):,} / 불일치: {len(mismatches):,}")
                 if not mismatches.empty:
                     st.dataframe(mismatches[[cid_col, camp_col, 'AI_조립결과']].head(500))
                 else:
                     st.balloons()
-            else:
-                st.dataframe(df[[cid_col, 'AI_조립결과']].head(1000))
-        else:
-            st.error("CID 열을 찾을 수 없습니다.")
+                    st.success("🎉 모든 데이터가 완벽하게 일치합니다!")
     except Exception as e:
-        st.error(f"시트 연결 오류: {e}")
+        st.error(f"오류: {e}")
