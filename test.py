@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 
-st.set_page_config(page_title="6만행 전수 검사 최종형", layout="wide")
+st.set_page_config(page_title="6만행 전수 검사 최종", layout="wide")
 
 # 1. 시트 설정
 SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIxYrj0LSrcaYdgY"
@@ -18,7 +18,7 @@ def build_perfect_key(cid):
 
     if cid_raw == "" or "_adef-" in cid_low: return "Unknown"
     
-    # 변수 초기화 (NameError 방지)
+    # 변수 초기화
     media = "google"
     camp = "alwayson"
     lvl = "middle-dm"
@@ -51,29 +51,27 @@ def build_perfect_key(cid):
     elif "naverpc" in cid_low: media = "naverpc"
     elif "navermo" in cid_low: media = "navermo"
 
-    # [2] 캠페인 키(Prefix) 판별 - 소재명보다 "캠페인 태그"가 무조건 우선
+    # [2] 캠페인 키(Prefix) 판별 - "캠페인 태그" 우선 원칙
     # 1. Holiday 강제 키워드
     if any(x in cid_low for x in ["becalm", "steadystate", "bigcozy"]):
         camp = "Holiday"
     # 2. 브랜드존
     elif any(x in media for x in ["naverbsmo", "naverbspc", "kakaobsmo", "kakaobspc"]):
         camp = "brand"
-    # 3. 사용자 지정 캠페인 태그 (소재명에 pants 등이 있어도 무시하고 태그를 따름)
+    # 3. 캠페인 태그 최우선 (이 태그들이 있으면 뒤의 소재명 pants, run 등 무시)
     elif "train-winter2025-train" in cid_low: camp = "Train"
-    elif "yet-spring2026-run" in cid_low: camp = "26run"
+    elif "yet-spring2026-run" in cid_low: camp = "26Run"
     elif "holiday-winter2025-general" in cid_low: camp = "Holiday"
     elif "bottoms-spring2026-otm" in cid_low:
         camp = "pants" if media == "naverda" else "Pants"
-    # [추가 요청 반영] meta에서 men-2026-alwayson 태그가 있으면 men 캠페인키 사용
     elif "men-2026-alwayson" in cid_low:
         camp = "men"
     elif any(x in cid_low for x in ["winter-2026-alwayson", "spring-2026-alwayson"]):
         camp = "alwayson"
-    
-    # 4. 특수 소재명 (위 태그들이 없을 때만 작동)
+    # 4. 태그가 없을 때만 소재명 판별
     elif "logorun" in cid_low: camp = "Run"
     
-    # 5. 기타 매체(Google 등)용 키워드
+    # 5. 기타 매체(Google 등)
     elif media in ["google", "YouTube"]:
         if has_token(cid_low, "product"): camp = "product"
         elif has_token(cid_low, "activity"): camp = "activity"
@@ -89,16 +87,14 @@ def build_perfect_key(cid):
     else:
         lvl = "middle-dm"
 
-    # 네이버 DA 특수 규칙 (lower -> middle)
-    if media == "naverda" and lvl == "lower-dm":
-        lvl = "middle-dm"
+    if media == "naverda" and lvl == "lower-dm": lvl = "middle-dm"
 
     # [4] 타겟(Target) 결정
     target = "retargeting" if "retargeting" in cid_low else "prospecting"
     if media in ["navermo", "naverpc", "kakaotalksa", "naverbsmo", "naverbspc", "kakaobsmo", "kakaobspc"]:
         target = "pro"
 
-    # [5] 최종 조립 및 예외 리턴
+    # [5] 카카오 옵트인 특수 조립
     if media == "kakaooptin":
         suffix = "transactional" if "transactional" in cid_low else "kakaopn"
         return f"alwayson-lower-dm-kakaooptin-{suffix}"
@@ -106,7 +102,7 @@ def build_perfect_key(cid):
     return f"{camp}-{lvl}-{target}-{media}"
 
 # --- 실행부 ---
-if st.button("🚀 전체 데이터 100% 일치 검사 시작"):
+if st.button("🚀 최종 검증 시작 (대소문자 무시)"):
     try:
         url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={MAPPING_GID}"
         df = pd.read_csv(url)
@@ -117,13 +113,10 @@ if st.button("🚀 전체 데이터 100% 일치 검사 시작"):
         if cid_col:
             df['AI_조립결과'] = df[cid_col].apply(build_perfect_key)
             if camp_col:
-                df['일치여부'] = df.apply(lambda x: "✅ 일치" if str(x[camp_col]).strip() == str(x['AI_조립결과']).strip() else "❌ 불일치", axis=1)
+                # 대소문자 무시하고 비교 (.lower() 적용)
+                df['일치여부'] = df.apply(lambda x: "✅ 일치" if str(x[camp_col]).strip().lower() == str(x['AI_조립결과']).strip().lower() else "❌ 불일치", axis=1)
                 mismatches = df[df['일치여부'] == "❌ 불일치"]
                 st.success(f"검사 완료! 일치: {len(df)-len(mismatches):,} / 불일치: {len(mismatches):,}")
-                if not mismatches.empty:
-                    st.dataframe(mismatches[[cid_col, camp_col, 'AI_조립결과']].head(500))
-                else:
-                    st.balloons()
-                    st.success("🎉 모든 데이터가 완벽하게 일치합니다!")
+                st.dataframe(mismatches[[cid_col, camp_col, 'AI_조립결과']].head(500))
     except Exception as e:
         st.error(f"오류: {e}")
