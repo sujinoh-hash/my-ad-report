@@ -64,7 +64,7 @@ def build_perfect_key(cid):
 
 # --- Streamlit 실행 부분 ---
 st.title("🚀 6만 행 불일치 해결 검증기")
-SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIXYrj0LSrcaYdgY"
+SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIxYrj0LSrcaYdgY"
 ADOBE_GID = "1818457274"
 
 if st.button("📊 다시 전수 검사하기"):
