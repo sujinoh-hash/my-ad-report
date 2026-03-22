@@ -12,7 +12,7 @@ if st.button("🔄 데이터 실시간 동기화 (Sync)"):
 st.divider()
 
 # --- 설정 ---
-SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIXYrj0LSrcaYdgY"
+SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIxYrj0LSrcaYdgY"
 MEDIA_GID = "0"
 ADOBE_GID = "1818457274"
 
