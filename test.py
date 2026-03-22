@@ -2,14 +2,13 @@ import streamlit as st
 import pandas as pd
 import re
 
-st.set_page_config(page_title="6만행 전수 검사 완결판", layout="wide")
+st.set_page_config(page_title="6만행 전수 검사 최종형", layout="wide")
 
 # 1. 시트 설정
 SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIxYrj0LSrcaYdgY"
 MAPPING_GID = "1901484506" 
 
 def has_token(text, token):
-    # 단어가 앞뒤로 [시작, 끝, _, -]로 확실히 구분될 때만 True
     return re.search(rf'(^|[_-]){re.escape(token)}([_-]|$)', text) is not None
 
 def build_perfect_key(cid):
@@ -17,10 +16,9 @@ def build_perfect_key(cid):
     cid_raw = str(cid).strip()
     cid_low = cid_raw.lower()
 
-    # [0] 필터링 (Unknown / Naver Shopping / SMS)
     if cid_raw == "" or "_adef-" in cid_low: return "Unknown"
     
-    # 기초 변수 초기화 (NameError 방지)
+    # 변수 초기화 (NameError 방지)
     media = "google"
     camp = "alwayson"
     lvl = "middle-dm"
@@ -29,7 +27,7 @@ def build_perfect_key(cid):
     if "navershopping" in cid_low: return "Naver shopping"
     if "sms" in cid_low: return "SMS_Senders"
 
-    # [1] 매체(Media) 판별 (브랜드존 우선)
+    # [1] 매체(Media) 판별
     if "naver-brandzone" in cid_low:
         media = "naverbsmo" if "_mo-" in cid_low else "naverbspc"
     elif "daum-brandzone" in cid_low:
@@ -40,8 +38,9 @@ def build_perfect_key(cid):
         media = "kakaodaD" if "_pcmo" in cid_low else "kakaoda"
         if "catalog" in cid_low: media = "kakaodaC"
     elif any(x in cid_low for x in ["smp_fbig", "smp_ig", "meta"]):
-        media = "metaC" if any(x in cid_low for x in ["catalog", "alwayson-na-na"]) else "meta"
-        if "prospecting-na-na" in cid_low: media = "metam3"
+        if any(x in cid_low for x in ["catalog", "alwayson-na-na"]): media = "metaC"
+        elif "prospecting-na-na" in cid_low: media = "metam3"
+        else: media = "meta"
     elif "pmax" in cid_low:
         if "pmaxa" in cid_low: media = "pmaxA"
         elif "pmaxw" in cid_low: media = "pmaxW"
@@ -51,26 +50,30 @@ def build_perfect_key(cid):
     elif "kakaochannelkeyword" in cid_low or "kakaotalksa" in cid_low: media = "kakaotalksa"
     elif "naverpc" in cid_low: media = "naverpc"
     elif "navermo" in cid_low: media = "navermo"
-    elif "criteo" in cid_low: media = "criteo"
 
-    # [2] 캠페인 키(Prefix) 판별 - 사용자님 가이드 순서 (소재명보다 태그 우선)
-    # A. 강제 Holiday
+    # [2] 캠페인 키(Prefix) 판별 - 소재명보다 "캠페인 태그"가 무조건 우선
+    # 1. Holiday 강제 키워드
     if any(x in cid_low for x in ["becalm", "steadystate", "bigcozy"]):
         camp = "Holiday"
-    # B. 브랜드존
+    # 2. 브랜드존
     elif any(x in media for x in ["naverbsmo", "naverbspc", "kakaobsmo", "kakaobspc"]):
         camp = "brand"
-    # C. 정해진 캠페인 태그 (소재명 pants 등이 뒤에 있어도 무시됨)
+    # 3. 사용자 지정 캠페인 태그 (소재명에 pants 등이 있어도 무시하고 태그를 따름)
     elif "train-winter2025-train" in cid_low: camp = "Train"
     elif "yet-spring2026-run" in cid_low: camp = "26run"
     elif "holiday-winter2025-general" in cid_low: camp = "Holiday"
     elif "bottoms-spring2026-otm" in cid_low:
         camp = "pants" if media == "naverda" else "Pants"
-    elif any(x in cid_low for x in ["winter-2026-alwayson", "men-2026-alwayson", "spring-2026-alwayson"]):
+    # [추가 요청 반영] meta에서 men-2026-alwayson 태그가 있으면 men 캠페인키 사용
+    elif "men-2026-alwayson" in cid_low:
+        camp = "men"
+    elif any(x in cid_low for x in ["winter-2026-alwayson", "spring-2026-alwayson"]):
         camp = "alwayson"
-    # D. 특수 소재명 (위 태그들이 없을 때만 작동)
+    
+    # 4. 특수 소재명 (위 태그들이 없을 때만 작동)
     elif "logorun" in cid_low: camp = "Run"
-    # E. 기타 매체(Google 등)용 키워드
+    
+    # 5. 기타 매체(Google 등)용 키워드
     elif media in ["google", "YouTube"]:
         if has_token(cid_low, "product"): camp = "product"
         elif has_token(cid_low, "activity"): camp = "activity"
