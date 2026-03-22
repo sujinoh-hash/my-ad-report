@@ -12,7 +12,7 @@ if st.button("🔄 최신 데이터 불러오기 (Sync)"):
 st.divider()
 
 # --- 설정: 본인의 시트 ID 및 Adobe GID ---
-SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIXYrj0LSrcaYdgY"
+SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIxYrj0LSrcaYdgY"
 ADOBE_GID = "1818457274"  # 아까 확인하신 GID
 
 def get_sheet_data(sheet_id, gid):
