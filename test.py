@@ -20,19 +20,13 @@ def build_perfect_key(cid):
     if "navershopping" in cid_low: return "Naver shopping"
     if "sms" in cid_low: return "SMS_Senders"
     
-    # [1] kakaopn (kakaooptin) 특수 처리 (캠페인 키 무조건 alwayson 고정)
-    if "kakaopn" in cid_low or "kakao-opt-in" in cid_low or "welcomemessage" in cid_low:
-        suffix = "transactional" if "transactional" in cid_low else "kakaopn"
+    # [1] kakaooptin (kakaopn, kakao-opt-in, pu_, transactional)
+    if any(x in cid_low for x in ["kakaopn", "kakao-opt-in", "welcomemessage", "pu_", "transactional"]):
+        # pu_ 또는 transactional 포함 시 transactional로 마감
+        suffix = "transactional" if any(x in cid_low for x in ["pu_", "transactional"]) else "kakaopn"
         return f"alwayson-lower-dm-kakaooptin-{suffix}"
 
-    # [2] PMAX 엄격 규칙
-    if "pmax" in cid_low:
-        if "w_prospecting-demo" in cid_low: return "alwayson-middle-dm-prospecting-pmaxW"
-        if "m_prospecting-demo" in cid_low: return "alwayson-middle-dm-prospecting-pmaxM"
-        if "prospecting-demo-all" in cid_low: return "alwayson-middle-dm-prospecting-pmaxC"
-        return "Unknown"
-
-    # [3] 브랜드존 (Naver/Daum) - 캠페인 키 무조건 alwayson 고정
+    # [2] 브랜드존 (naver-brandzone, daum-brandzone) -> 캠페인키 alwayson 고정
     if "naver-brandzone" in cid_low:
         sub = "naverbsmo" if any(x in cid_low for x in ["_mo-", "-mo-"]) else "naverbspc"
         return f"alwayson-BS-dm-pro-{sub}"
@@ -40,28 +34,41 @@ def build_perfect_key(cid):
         sub = "kakaobsmo" if any(x in cid_low for x in ["_mo-", "-mo-"]) else "kakaobspc"
         return f"alwayson-BS-dm-pro-{sub}"
 
-    # [4] PS_ 검색 광고 (Google/Naver/Daum)
-    if "ps_google" in cid_low:
-        if "keyword-brand" in cid_low:
-            t = "retargeting" if "retargeting" in cid_low else "prospecting"
-            if "alwayson-na-na_pcmo" in cid_low: return f"brand-lower-dm-{t}-google"
-        if "prospecting-keyword-product" in cid_low: return "product-middle-dm-prospecting-google"
-        if "prospecting-keyword-activity" in cid_low: return "activity-middle-dm-prospecting-google"
-        if not any(x in cid_low for x in ["retargeting", "prospecting"]): return "Unknown"
+    # [3] PS_ 검색 광고 (Google / Naver / Daum) -> brand, product, activity로만 시작
+    # ps_naver-brandzone은 제외 (위에서 처리됨)
+    if "ps_naver" in cid_low or "ps_google" in cid_low or "ps_daum" in cid_low:
+        # 매체 결정
+        if "ps_naver" in cid_low:
+            media_final = "navermo" if any(x in cid_low for x in ["_mo", "-mo"]) else "naverpc"
+            target_final = "pro"
+        elif "ps_google" in cid_low:
+            media_final = "google"
+            target_final = "retargeting" if "retargeting" in cid_low else "prospecting"
+        else: # ps_daum
+            media_final = "kakaomo" if "-mo-" in cid_low else "kakaopc"
+            target_final = "prospecting"
 
-    if "ps_daum_brand" in cid_low:
-        sub = "kakaomo" if "-mo-" in cid_low else "kakaopc"
-        return f"brand-lower-dm-prospecting-{sub}"
+        # 캠페인키 결정 (brand, product, activity 순서)
+        if "brand" in cid_low: camp_final = "brand"
+        elif "product" in cid_low: camp_final = "product"
+        elif "activity" in cid_low: camp_final = "activity"
+        else: camp_final = "brand" # 기본값
 
-    if "ps_naver" in cid_low:
-        sub = "navermo" if any(x in cid_low for x in ["_mo", "-mo"]) else "naverpc"
-        if "keyword-brand" in cid_low and "alwayson-na-na" in cid_low: return f"brand-lower-dm-pro-{sub}"
-        if "keyword-product" in cid_low and "alwayson-na-na" in cid_low: return f"product-middle-dm-pro-{sub}"
-        if "keyword-activity" in cid_low and "alwayson-na-na" in cid_low: return f"activity-middle-dm-pro-{sub}"
-        if "mo-imagesublink" in cid_low and any(x in cid_low for x in ["yoga", "pilates"]): return "activity-middle-dm-pro-navermo"
-        if not any(x in cid_low for x in ["25", "26"]): return "Unknown"
+        # 단계 결정
+        if "lower" in cid_low: lvl_final = "lower-dm"
+        elif "middle" in cid_low or "product" in cid_low or "activity" in cid_low: lvl_final = "middle-dm"
+        else: lvl_final = "lower-dm" # brand 기본
 
-    # [5] 일반 매체 조립 로직 (Meta, YouTube, DA 등)
+        return f"{camp_final}-{lvl_final}-{target_final}-{media_final}"
+
+    # [4] PMAX 엄격 규칙
+    if "pmax" in cid_low:
+        if "w_prospecting-demo" in cid_low: return "alwayson-middle-dm-prospecting-pmaxW"
+        if "m_prospecting-demo" in cid_low: return "alwayson-middle-dm-prospecting-pmaxM"
+        if "prospecting-demo-all" in cid_low: return "alwayson-middle-dm-prospecting-pmaxC"
+        return "Unknown"
+
+    # [5] 일반 매체 (Meta, YouTube, DA, Criteo 등)
     media = "google"
     if "dsp_yt" in cid_low: media = "YouTube"
     elif "dsp_naver" in cid_low: media = "naverda"
@@ -71,12 +78,14 @@ def build_perfect_key(cid):
     elif any(x in cid_low for x in ["meta", "smp_fbig", "smp_ig"]):
         media = "metaC" if any(x in cid_low for x in ["catalog", "alwayson-na-na"]) else "meta"
         if "prospecting-na-na" in cid_low: media = "metam3"
-    elif "kakaotalksa" in cid_low or "kakaochannel" in cid_low: media = "kakaotalksa"
     elif "criteo" in cid_low: media = "criteo"
+    elif "kakaotalksa" in cid_low: media = "kakaotalksa"
 
-    # 캠페인 키 (Prefix) - 우선순위 유지
-    camp = "alwayson"
-    if any(x in cid_low for x in ["becalm", "steadystate", "bigcozy"]): camp = "Holiday"
+    # 캠페인 키 (Prefix)
+    # Criteo는 무조건 alwayson
+    if media == "criteo":
+        camp = "alwayson"
+    elif any(x in cid_low for x in ["becalm", "steadystate", "bigcozy"]): camp = "Holiday"
     elif "train-winter2025-train" in cid_low: camp = "Train"
     elif "yet-spring2026-run" in cid_low: camp = "26Run"
     elif "bottoms-spring2026-otm" in cid_low: camp = "pants" if media == "naverda" else "Pants"
@@ -84,8 +93,9 @@ def build_perfect_key(cid):
     elif "holiday-winter2025-general" in cid_low: camp = "Holiday"
     elif any(x in cid_low for x in ["winter-2026-alwayson", "spring-2026-alwayson"]): camp = "alwayson"
     elif "logorun" in cid_low: camp = "Run"
+    else: camp = "alwayson"
 
-    # 단계 (Funnel) - lower 우선 체크
+    # 단계 (Funnel)
     if "lower" in cid_low or "retargeting" in cid_low: lvl = "lower-dm"
     elif "upper" in cid_low or "prospecting" in cid_low: lvl = "upper-dm"
     else: lvl = "middle-dm"
@@ -98,8 +108,8 @@ def build_perfect_key(cid):
 
     return f"{camp}-{lvl}-{target}-{media}"
 
-# --- 실행 UI ---
-if st.button("🚀 최종 보완 버전 전수 검사 시작"):
+# --- 실행부 ---
+if st.button("🚀 전체 규칙 통합 최종 검사 시작"):
     try:
         url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={MAPPING_GID}"
         df = pd.read_csv(url)
@@ -110,7 +120,6 @@ if st.button("🚀 최종 보완 버전 전수 검사 시작"):
         if cid_col:
             df['AI_조립결과'] = df[cid_col].apply(build_perfect_key)
             if camp_col:
-                # 대소문자 무시 비교
                 df['일치여부'] = df.apply(lambda x: "✅ 일치" if str(x[camp_col]).strip().lower() == str(x['AI_조립결과']).strip().lower() else "❌ 불일치", axis=1)
                 mismatches = df[df['일치여부'] == "❌ 불일치"]
                 st.success(f"검사 완료! 일치: {len(df)-len(mismatches):,} / 불일치: {len(mismatches):,}")
