@@ -21,7 +21,7 @@ def get_sheet_data(sheet_id, gid):
 ad_df = get_sheet_data(SHEET_ID, "0")
 # 2. 어도비 매출 데이터 가져오기 (Adobe 탭: gid 확인 필요, 예시는 임시 gid)
 # Adobe 탭의 실제 gid 숫자로 아래 "12345"를 수정해 주세요!
-adobe_df = get_sheet_data(SHEET_ID, "Adobe_탭_GID_숫자넣기") 
+adobe_df = "1818457274"(SHEET_ID, "Adobe_탭_GID_숫자넣기") 
 
 if ad_df is not None:
     # 광고 데이터 정제
