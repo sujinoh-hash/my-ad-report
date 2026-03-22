@@ -63,7 +63,7 @@ def build_final_key_v9(cid):
 st.title("🔎 6만 행 전수 검사 결과")
 
 # 시트 정보 (사용자님 정보 다시 확인)
-SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIXYrj0LSrcaYdgY"
+SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIxYrj0LSrcaYdgY"
 ADOBE_GID = "1818457274"
 
 if st.button("🚀 6만 행 매핑 시작 (구글 시트 연결)"):
