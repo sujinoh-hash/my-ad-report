@@ -105,18 +105,44 @@ if ad_df is not None and not ad_df.empty:
 
     st.divider()
 
-    # 상세 성과 표 (캠페인별 합산)
-    st.subheader("📋 캠페인별 성과 요약")
-    ad_sum = f_ad.groupby('캠페인명')['광고비'].sum().reset_index()
+   # --- 상세 성과 표 (모든 지표 통합) ---
+    st.subheader("📋 캠페인별 통합 성과 상세 (Full Metrics)")
+
+    # 1. 광고 데이터 요약 (노출, 클릭 추가)
+    ad_sum = f_ad.groupby('캠페인명').agg({
+        '광고비': 'sum',
+        '노출': 'sum',
+        '클릭': 'sum'
+    }).reset_index()
+
+    # 2. 어도비 데이터 요약 (장바구니수 추가)
     if not f_adobe_matched.empty:
-        adobe_sum = f_adobe_matched.groupby('캠페인명')[['방문수', '주문수', '매출액']].sum().reset_index()
+        adobe_sum = f_adobe_matched.groupby('캠페인명').agg({
+            '방문수': 'sum',
+            '장바구니수': 'sum',
+            '주문수': 'sum',
+            '매출액': 'sum'
+        }).reset_index()
         final_table = pd.merge(ad_sum, adobe_sum, on='캠페인명', how='left').fillna(0)
     else:
         final_table = ad_sum
-        for col in ['방문수', '주문수', '매출액']: final_table[col] = 0
-    
-    final_table['ROAS(%)'] = (final_table['매출액'] / final_table['광고비'] * 100).fillna(0)
-    st.dataframe(final_table.sort_values('광고비', ascending=False), use_container_width=True)
+        for col in ['방문수', '장바구니수', '주문수', '매출액']: final_table[col] = 0
 
-else:
-    st.error("데이터를 불러오지 못했습니다. 시트 설정을 확인하세요.")
+    # 3. 계산 지표 추가 (CTR, CVR, ROAS)
+    final_table['CTR(%)'] = (final_table['클릭'] / final_table['노출'] * 100).fillna(0)
+    final_table['CVR(%)'] = (final_table['주문수'] / final_table['방문수'] * 100).fillna(0)
+    final_table['ROAS(%)'] = (final_table['매출액'] / final_table['광고비'] * 100).replace([float('inf')], 0).fillna(0)
+    final_table['CPC'] = (final_table['광고비'] / final_table['클릭']).replace([float('inf')], 0).fillna(0)
+
+    # 4. 보기 좋게 정렬 및 출력
+    display_cols = [
+        '캠페인명', '광고비', '매출액', 'ROAS(%)', 
+        '노출', '클릭', 'CTR(%)', 'CPC',
+        '방문수', '장바구니수', '주문수', 'CVR(%)'
+    ]
+    
+    # 숫자 포맷팅 (소수점 정리)
+    st.dataframe(
+        final_table[display_cols].sort_values('광고비', ascending=False), 
+        use_container_width=True
+    )
