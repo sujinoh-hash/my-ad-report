@@ -14,7 +14,7 @@ if st.button("🔄 데이터 실시간 동기화 (Sync)"):
 st.divider()
 
 # --- 1. 설정: 시트 ID 및 GID ---
-SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIXYrj0LSrcaYdgY"
+SHEET_ID = "1u57_Dqo9KoqcpP5OqM9XzD9W3J-VIxYrj0LSrcaYdgY"
 MEDIA_GID = "0"          # 광고 데이터 탭 (Media)
 ADOBE_GID = "1818457274"  # 어도비 데이터 탭 (Adobe)
 
