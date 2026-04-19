@@ -291,7 +291,19 @@ with tab2:
         df_a = pd.read_csv(adobe_in)
         all_m = []
         for mf in media_ins:
-            df_m = pd.read_excel(mf) if mf.name.endswith("xlsx") else pd.read_csv(mf)
+            if mf.name.endswith("xlsx"):
+                df_m = pd.read_excel(mf)
+            else:
+                raw = mf.read()
+                for enc in ["utf-8-sig", "euc-kr", "cp949", "utf-8"]:
+                    try:
+                        df_m = pd.read_csv(io.StringIO(raw.decode(enc)))
+                        break
+                    except Exception:
+                        continue
+                else:
+                    st.error(f"❌ {mf.name} 파일 인코딩을 읽을 수 없어요.")
+                    continue
             ren = {
                 "일": "일", "Day": "일", "일자": "일", "일별": "일", "날짜": "일",
                 "캠페인 이름": "캠페인명", "Campaign": "캠페인명", "메시지명": "캠페인명",
