@@ -340,7 +340,7 @@ with tab2:
             # 날짜 형식 통일 (YYYY-MM-DD)
             if "일" in df_m.columns:
                 df_m["일"] = pd.to_datetime(
-                    df_m["일"].astype(str).str.strip(), infer_datetime_format=True, errors="coerce"
+                    df_m["일"].astype(str).str.strip(), errors="coerce"
                 ).dt.strftime("%Y-%m-%d")
 
             # 필요한 컬럼만 남기기
