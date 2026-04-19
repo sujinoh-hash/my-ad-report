@@ -337,6 +337,15 @@ with tab2:
                         df_m[col].astype(str).str.replace(",", ""), errors="coerce"
                     ).fillna(0)
 
+            # 날짜 형식 통일 (YYYY-MM-DD)
+            if "일" in df_m.columns:
+                df_m["일"] = pd.to_datetime(
+                    df_m["일"].astype(str).str.strip(), infer_datetime_format=True, errors="coerce"
+                ).dt.strftime("%Y-%m-%d")
+
+            # 필요한 컬럼만 남기기
+            keep_cols = ["일", "캠페인명", "노출", "클릭", "광고비", "채널친구수"]
+            df_m = df_m[[c for c in keep_cols if c in df_m.columns]]
             all_m.append(df_m)
 
         df_m_total = pd.concat(all_m).groupby(["일", "캠페인명"]).sum(numeric_only=True).reset_index()
