@@ -105,18 +105,17 @@ def build_campaign_key_v21(cid: str) -> str:
         if "navershopping" in medium:
             return "dm-pro-shopping-alwayson-n-n"
 
-        # 네이버/카카오(다음) 브랜드검색
+        # 네이버/카카오(다음) 브랜드검색 → 캠페인키 alwayson-n-n 고정
         if "naver-brandzone" in medium or "daum-brandzone" in medium:
             seg7 = parts[7].lower() if len(parts) > 7 else ""
             if not (seg7.startswith("prospecting") or seg7.startswith("retargeting")):
                 return "Unknown"
-            c_key = normalize_campaign_key(parts[8]) if len(parts) > 8 else "alwayson-na-na"
             device_seg = parts[9].lower() if len(parts) > 9 else ""
             if "daum" in medium:
                 device = "kakaobsmo" if device_seg.startswith("mo") else "kakaobspc"
             else:
                 device = "naverbsmo" if device_seg.startswith("mo") else "naverbspc"
-            return f"dm-pro-{device}-{c_key}"
+            return f"dm-pro-{device}-alwayson-n-n"
 
         # 네이버 SA / 다음 SA
         if medium in ["naver", "daum"] or (
@@ -125,19 +124,21 @@ def build_campaign_key_v21(cid: str) -> str:
             seg7 = parts[7].lower() if len(parts) > 7 else ""
             if not (seg7.startswith("prospecting") or seg7.startswith("retargeting")):
                 return "Unknown"
-            funnel = get_funnel(seg7, naver=True)
-            device_seg = parts[9].lower() if len(parts) > 9 else ""
+            # 다음(카카오) SA는 prospecting/retargeting 그대로, 네이버만 pro/re 축약
             if medium == "daum":
+                funnel = get_funnel(seg7)
+                device_seg = parts[9].lower() if len(parts) > 9 else ""
                 device = "kakaomo" if device_seg.startswith("mo") else "kakaopc"
             else:
+                funnel = get_funnel(seg7, naver=True)
+                device_seg = parts[9].lower() if len(parts) > 9 else ""
                 device = "navermo" if device_seg.startswith("mo") else "naverpc"
             if   "keyword-generic"  in seg7: cat = "generic"
             elif "keyword-activity" in seg7: cat = "Activity"
             elif "keyword-brand"    in seg7: cat = "brand"
             elif "keyword-product"  in seg7: cat = "product"
             else:                            cat = "brand"
-            c_key = normalize_campaign_key(parts[8]) if len(parts) > 8 else "alwayson-na-na"
-            return f"dm-{funnel}-{device}-{cat}-{c_key}"
+            return f"dm-{funnel}-{device}-{cat}-na-na"
 
         # 구글 SA
         if medium == "google":
@@ -150,8 +151,7 @@ def build_campaign_key_v21(cid: str) -> str:
             elif "keyword-brand"    in seg7: cat = "brand"
             elif "keyword-product"  in seg7: cat = "product"
             else:                            cat = "brand"
-            c_key = normalize_campaign_key(parts[8]) if len(parts) > 8 else "alwayson-na-na"
-            return f"dm-{funnel}-googlepcmo-{cat}-{c_key}"
+            return f"dm-{funnel}-googlepcmo-{cat}-na-na"
 
         return "Unknown"
 
@@ -159,8 +159,13 @@ def build_campaign_key_v21(cid: str) -> str:
     if prefix == "dsp":
         medium  = parts[1].lower() if len(parts) > 1 else ""
         seg7    = parts[7].lower() if len(parts) > 7 else ""
-        c_key   = normalize_campaign_key(parts[8]) if len(parts) > 8 else "alwayson-na-na"
+        raw_key = parts[8] if len(parts) > 8 else ""
+        c_key   = normalize_campaign_key(raw_key)
         dev_seg = parts[9].lower() if len(parts) > 9 else ""
+
+        # DA 캠페인키 유효성 검사 (카탈로그 제외한 DA 매체는 캠페인키가 반드시 3파트)
+        def is_valid_da_key(key: str) -> bool:
+            return len(key.split("-")) >= 3
 
         # 구글 PMAX
         if medium == "google":
@@ -178,29 +183,41 @@ def build_campaign_key_v21(cid: str) -> str:
         if medium == "criteo":
             return f"dm-{get_funnel(seg7)}-criteo-alwayson-na-na"
 
-        # 카카오 SA (kakao-kw)
+        # 카카오 키워드 광고 (kakao-kw) → 캠페인키 alwayson-na-na 고정
         if medium == "kakao-kw":
-            return f"dm-{get_funnel(seg7)}-kakaokw-brand-{c_key}"
+            return f"dm-{get_funnel(seg7)}-kakaokw-brand-alwayson-na-na"
 
-        # 네이버 GFA / catalog
+        # 네이버 GFA / gfacatalog
         if medium == "naver":
-            funnel = get_funnel(seg7, naver=True)
-            fmt = "catalog" if "catalog" in low else "GFA"
-            return f"dm-{funnel}-{fmt}-{c_key}"
+            funnel = get_funnel(seg7)  # 1번: GFA는 prospecting/retargeting 그대로
+            if "catalog" in low:
+                return f"dm-{funnel}-gfacatalog-alwayson-na-na"
+            if not is_valid_da_key(c_key): return "Unknown"
+            return f"dm-{funnel}-GFA-{c_key}"
 
         # 카카오 DA
         if medium == "kakao":
             funnel = get_funnel(seg7)
-            if   "catalog"          in low:            fmt = "catalog"
-            elif dev_seg.startswith("mo-"):            fmt = "bizboard"
-            else:                                      fmt = "display"
+            if "catalog" in low:
+                return f"dm-{funnel}-kakaocatalog-alwayson-na-na"
+            if not is_valid_da_key(c_key): return "Unknown"
+            if dev_seg.startswith("mo-"): fmt = "bizboard"
+            else:                         fmt = "display"
             return f"dm-{funnel}-{fmt}-{c_key}"
 
         # 메타 DA
         if medium in ["fbig", "meta"]:
             funnel = get_funnel(seg7)
-            fmt = "catalog" if "catalog" in low else "fbig"
-            return f"dm-{funnel}-{fmt}-{c_key}"
+            if "catalog" in low:
+                return f"dm-{funnel}-fbigcatalog-alwayson-na-na"
+            if not is_valid_da_key(c_key): return "Unknown"
+            return f"dm-{funnel}-fbig-{c_key}"
+
+        # 크림 DA
+        if medium == "kream":
+            funnel = get_funnel(seg7)
+            if not is_valid_da_key(c_key): return "Unknown"
+            return f"dm-{funnel}-Kream-{c_key}"
 
         # 페이코
         if medium == "payco":
