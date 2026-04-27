@@ -294,18 +294,15 @@ with tab1:
         )
 
 with tab2:
-    st.header("📊 데이터 최종 통합 리포트")
-    c1, c2 = st.columns(2)
-    with c1:
-        adobe_in = st.file_uploader("1. 검수된 어도비 파일", type="csv", key="t2a")
-    with c2:
-        media_ins = st.file_uploader(
-            "2. 매체 Raw 파일들", type=["csv", "xlsx"],
-            accept_multiple_files=True, key="t2m",
-        )
+    st.header("📊 매체 Raw 데이터 정제")
+    media_ins = st.file_uploader(
+        "매체 Raw 파일들을 드래그하세요.",
+        type=["csv", "xlsx"],
+        accept_multiple_files=True,
+        key="t2m",
+    )
 
-    if adobe_in and media_ins:
-        df_a = pd.read_csv(adobe_in)
+    if media_ins:
         all_m = []
         for mf in media_ins:
             if mf.name.endswith("xlsx"):
@@ -321,6 +318,7 @@ with tab2:
                 else:
                     st.error(f"❌ {mf.name} 파일 인코딩을 읽을 수 없어요.")
                     continue
+
             ren = {
                 "일": "일", "Day": "일", "일자": "일", "일별": "일", "날짜": "일",
                 "캠페인 이름": "캠페인명", "Campaign": "캠페인명", "메시지명": "캠페인명",
@@ -333,6 +331,7 @@ with tab2:
             }
             df_m.rename(columns=ren, inplace=True)
 
+            # 파일명 기반 캠페인명 강제 지정
             fname = mf.name
             if "메시지" in fname:
                 df_m["캠페인명"] = "dm-kakaooptin-kakaotransactional-alwayson-na-na"
@@ -345,9 +344,11 @@ with tab2:
                 )
                 df_m["노출"], df_m["클릭"] = 0, 0
 
+            # kakaopn 열람수 → 노출수
             if "열람수" in df_m.columns:
                 df_m.loc[df_m["캠페인명"].str.contains("kakaopn", na=False), "노출"] = df_m["열람수"]
 
+            # 수치 콤마 제거 및 숫자 변환
             for col in ["노출", "클릭", "광고비", "채널친구수"]:
                 if col in df_m.columns:
                     df_m[col] = pd.to_numeric(
@@ -365,25 +366,13 @@ with tab2:
             df_m = df_m[[c for c in keep_cols if c in df_m.columns]]
             all_m.append(df_m)
 
-        df_m_total = pd.concat(all_m).groupby(["일", "캠페인명"]).sum(numeric_only=True).reset_index()
-
-        if st.button("🚀 최종 통합 실행"):
-            df_a_sum = df_a.groupby(["날짜", "AI_제안명"]).agg(
-                {"방문 횟수": "sum", "Cart Adds": "sum", "Orders": "sum", "Revenue": "sum"}
-            ).reset_index()
-
-            final = pd.merge(
-                df_m_total, df_a_sum,
-                left_on=["일", "캠페인명"], right_on=["날짜", "AI_제안명"],
-                how="outer",
-            )
-            final["일"] = final["일"].fillna(final["날짜"])
-            final["캠페인명"] = final["캠페인명"].fillna(final["AI_제안명"])
-
-            result = final.drop(columns=["날짜", "AI_제안명"]).sort_values(["일", "캠페인명"])
+        if all_m:
+            result = pd.concat(all_m).groupby(["일", "캠페인명"]).sum(numeric_only=True).reset_index()
+            st.info(f"✅ 총 {len(result)}행 정제 완료")
             st.dataframe(result.head(1000))
             st.download_button(
-                "📥 통합 리포트 다운로드",
+                "📥 매체 정제 데이터 다운로드",
                 result.to_csv(index=False).encode("utf-8-sig"),
-                "lululemon_final_report_v21.csv",
+                "media_cleaned.csv",
             )
+
