@@ -458,14 +458,14 @@ with tab2:
 # ────────────────────────────────────────────────────────────
 # GA4 파싱 함수
 # ────────────────────────────────────────────────────────────
-def build_campaign_key_ga4(cid: str, search_term: str = "") -> str:
+def build_campaign_key_ga4(cid: str, search_term: str = "", ad_content: str = "") -> str:
     """
     GA4 트래킹코드 → 캠페인명 변환
-    어도비와 구조 동일하나:
-    - parts[7] = 세그먼트명 (새로 추가)
+    - parts[6] = 타겟방식
+    - parts[7] = 세그먼트명
     - parts[8] = 캠페인키
-    - 기기 구분은 세션검색어(search_term)로 판별
-    - 이미 dm-으로 시작하는 캠페인명은 그대로 통과
+    - SA 기기 구분: 세션광고콘텐츠(ad_content)에서 mo- 시작 여부
+    - DA 기기/포맷 구분: 세션검색어(search_term)
     """
     if pd.isna(cid) or str(cid).strip() == "":
         return "Unknown"
@@ -474,7 +474,8 @@ def build_campaign_key_ga4(cid: str, search_term: str = "") -> str:
     low = raw.lower()
     parts = raw.split("_")
     prefix = parts[0].lower()
-    st_low = str(search_term).lower() if search_term else ""
+    st_low = str(search_term).lower() if search_term and str(search_term) != "nan" else ""
+    ac_low = str(ad_content).lower() if ad_content and str(ad_content) != "nan" else ""
 
     # 이미 변환된 캠페인명 → 그대로 통과
     if raw.startswith("dm-"):
@@ -529,9 +530,9 @@ def build_campaign_key_ga4(cid: str, search_term: str = "") -> str:
             if not (seg6.startswith("prospecting") or seg6.startswith("retargeting")):
                 return "Unknown"
             if "daum" in medium:
-                device = "kakaobsmo" if "mo" in st_low else "kakaobspc"
+                device = "kakaobsmo" if ac_low.startswith("mo-") else "kakaobspc"
             else:
-                device = "naverbsmo" if "mo" in st_low else "naverbspc"
+                device = "naverbsmo" if ac_low.startswith("mo-") else "naverbspc"
             return f"dm-pro-{device}-alwayson-n-n"
 
         if medium in ["naver", "daum"] or (
@@ -541,10 +542,10 @@ def build_campaign_key_ga4(cid: str, search_term: str = "") -> str:
                 return "Unknown"
             if medium == "daum":
                 funnel = get_funnel(seg6)
-                device = "kakaomo" if "mo" in st_low else "kakaopc"
+                device = "kakaomo" if ac_low.startswith("mo-") else "kakaopc"
             else:
                 funnel = get_funnel(seg6, naver=True)
-                device = "navermo" if "mo" in st_low else "naverpc"
+                device = "navermo" if ac_low.startswith("mo-") else "naverpc"
             if   "keyword-generic"  in seg6: cat = "generic"
             elif "keyword-activity" in seg6: cat = "Activity"
             elif "keyword-brand"    in seg6: cat = "brand"
@@ -554,6 +555,7 @@ def build_campaign_key_ga4(cid: str, search_term: str = "") -> str:
 
         if medium == "google":
             funnel = get_funnel(seg6)
+            device_g = "mo" if ac_low.startswith("mo-") else "pc"
             if   "keyword-generic"  in seg6: cat = "generic"
             elif "keyword-activity" in seg6: cat = "Activity"
             elif "keyword-brand"    in seg6: cat = "brand"
@@ -682,7 +684,11 @@ with tab3:
 
             # 캠페인명 맵핑
             df["AI_제안명"] = df.apply(
-                lambda r: build_campaign_key_ga4(r["세션캠페인"], r["세션검색어"]), axis=1
+                lambda r: build_campaign_key_ga4(
+                    r["세션캠페인"],
+                    r.get("세션검색어", ""),
+                    r.get("세션광고콘텐츠", "")
+                ), axis=1
             )
 
             # 지표 숫자 변환
