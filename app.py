@@ -594,16 +594,16 @@ def build_campaign_key_ga4(cid: str, search_term: str = "") -> str:
             return f"dm-{get_funnel(seg7)}-criteo-alwayson-na-na"
 
         if medium == "kakao-kw":
-            return f"dm-{get_funnel(seg7)}-kakaokw-brand-alwayson-na-na"
+            return f"dm-{get_funnel(seg6)}-kakaokw-brand-alwayson-na-na"
 
         if medium == "naver":
-            funnel = get_funnel(seg7)
+            funnel = get_funnel(seg6)
             if "catalog" in low: return f"dm-{funnel}-gfacatalog-alwayson-na-na"
             if not is_valid_da_key(c_key): return "Unknown"
             return f"dm-{funnel}-GFA-{c_key}"
 
         if medium == "kakao":
-            funnel = get_funnel(seg7)
+            funnel = get_funnel(seg6)
             if "kakaocatalog" in st_low or "catalog" in st_low:
                 return f"dm-{funnel}-kakaocatalog-alwayson-na-na"
             if not is_valid_da_key(c_key): return "Unknown"
@@ -611,13 +611,13 @@ def build_campaign_key_ga4(cid: str, search_term: str = "") -> str:
             return f"dm-{funnel}-{fmt}-{c_key}"
 
         if medium in ["fbig", "meta"]:
-            funnel = get_funnel(seg7)
+            funnel = get_funnel(seg6)
             if "catalog" in low: return f"dm-{funnel}-fbigcatalog-alwayson-na-na"
             if not is_valid_da_key(c_key): return "Unknown"
             return f"dm-{funnel}-fbig-{c_key}"
 
         if medium == "kream":
-            funnel = get_funnel(seg7)
+            funnel = get_funnel(seg6)
             if not is_valid_da_key(c_key): return "Unknown"
             return f"dm-{funnel}-Kream-{c_key}"
 
