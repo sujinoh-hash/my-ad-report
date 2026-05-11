@@ -499,21 +499,17 @@ def build_campaign_key_ga4(cid: str, search_term: str = "") -> str:
         medium = parts[1].lower() if len(parts) > 1 else ""
         if medium == "ig": return "Unknown"
         if "wc10" in low: return "dm-kakaooptin-kakaotransactional-alwayson-na-na"
+        seg6 = parts[6].lower() if len(parts) > 6 else ""
         if medium == "kakao":
-            seg6 = parts[6].lower() if len(parts) > 6 else ""
-            if seg6 in ["tx", "all"] and "transactional" in low:
-                return "dm-kakaooptin-kakaotransactional-alwayson-na-na"
-            seg7 = parts[7].lower() if len(parts) > 7 else ""
-            if "kakao-opt-in" in seg7 or "welcomemessage" in low:
+            # GA4: [6]이 kakao-opt-in
+            if "kakao-opt-in" in seg6 or "welcomemessage" in low:
                 c_key = normalize_campaign_key(parts[8]) if len(parts) > 8 else "alwayson-na-na"
                 return f"dm-kakaooptin-kakaopn-{c_key}"
             return "Unknown"
         if medium in ["fbig", "meta"]:
-            seg7 = parts[7].lower() if len(parts) > 7 else ""
-            funnel = get_funnel(seg7)
+            funnel = get_funnel(seg6)
             raw_key = parts[8] if len(parts) > 8 else ""
             c_key = normalize_campaign_key(raw_key)
-            # 세션검색어로 포맷 판별
             if "fbigcatalog" in st_low or "catalog" in st_low:
                 return f"dm-{funnel}-fbigcatalog-alwayson-na-na"
             if len(c_key.split("-")) < 3: return "Unknown"
@@ -523,14 +519,14 @@ def build_campaign_key_ga4(cid: str, search_term: str = "") -> str:
     # ps_
     if prefix == "ps":
         medium = parts[1].lower() if len(parts) > 1 else ""
-        if len(parts) < 9: return "Unknown"  # 짤린 코드
+        if len(parts) < 9: return "Unknown"
+        seg6 = parts[6].lower() if len(parts) > 6 else ""
 
         if "navershopping" in medium:
             return "dm-pro-shopping-alwayson-n-n"
 
         if "naver-brandzone" in medium or "daum-brandzone" in medium:
-            seg7 = parts[7].lower() if len(parts) > 7 else ""
-            if not (seg7.startswith("prospecting") or seg7.startswith("retargeting")):
+            if not (seg6.startswith("prospecting") or seg6.startswith("retargeting")):
                 return "Unknown"
             if "daum" in medium:
                 device = "kakaobsmo" if "mo" in st_low else "kakaobspc"
@@ -541,25 +537,22 @@ def build_campaign_key_ga4(cid: str, search_term: str = "") -> str:
         if medium in ["naver", "daum"] or (
             medium.startswith("naver") and "shopping" not in medium and "brandzone" not in medium
         ):
-            seg7 = parts[7].lower() if len(parts) > 7 else ""
-            if not (seg7.startswith("prospecting") or seg7.startswith("retargeting")):
+            if not (seg6.startswith("prospecting") or seg6.startswith("retargeting")):
                 return "Unknown"
             if medium == "daum":
-                funnel = get_funnel(seg7)
+                funnel = get_funnel(seg6)
                 device = "kakaomo" if "mo" in st_low else "kakaopc"
             else:
-                funnel = get_funnel(seg7, naver=True)
+                funnel = get_funnel(seg6, naver=True)
                 device = "navermo" if "mo" in st_low else "naverpc"
-            if   "keyword-generic"  in seg7: cat = "generic"
-            elif "keyword-activity" in seg7: cat = "Activity"
-            elif "keyword-brand"    in seg7: cat = "brand"
-            elif "keyword-product"  in seg7: cat = "product"
+            if   "keyword-generic"  in seg6: cat = "generic"
+            elif "keyword-activity" in seg6: cat = "Activity"
+            elif "keyword-brand"    in seg6: cat = "brand"
+            elif "keyword-product"  in seg6: cat = "product"
             else:                            cat = "brand"
             return f"dm-{funnel}-{device}-{cat}-na-na"
 
         if medium == "google":
-            # GA4는 [6]에 타겟방식, [7]은 세그먼트명
-            seg6 = parts[6].lower() if len(parts) > 6 else ""
             funnel = get_funnel(seg6)
             if   "keyword-generic"  in seg6: cat = "generic"
             elif "keyword-activity" in seg6: cat = "Activity"
@@ -574,24 +567,22 @@ def build_campaign_key_ga4(cid: str, search_term: str = "") -> str:
     if prefix == "dsp":
         medium  = parts[1].lower() if len(parts) > 1 else ""
         seg6    = parts[6].lower() if len(parts) > 6 else ""
-        seg7    = parts[7].lower() if len(parts) > 7 else ""
         raw_key = parts[8] if len(parts) > 8 else ""
         c_key   = normalize_campaign_key(raw_key)
 
         def is_valid_da_key(key): return len(key.split("-")) >= 3
 
         if medium == "google":
-            # PMAX: 세션검색어로 W/M/C 구분
             if   "pmaxw" in st_low: pmax = "PmaxW"
             elif "pmaxm" in st_low: pmax = "PmaxM"
             else:                   pmax = "PmaxC"
             return f"dm-prospecting-{pmax}-alwayson-na-na"
 
         if medium == "yt":
-            return f"dm-{get_funnel(seg7)}-Youtube-alwayson-na-na"
+            return f"dm-{get_funnel(seg6)}-Youtube-alwayson-na-na"
 
         if medium == "criteo":
-            return f"dm-{get_funnel(seg7)}-criteo-alwayson-na-na"
+            return f"dm-{get_funnel(seg6)}-criteo-alwayson-na-na"
 
         if medium == "kakao-kw":
             return f"dm-{get_funnel(seg6)}-kakaokw-brand-alwayson-na-na"
