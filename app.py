@@ -648,28 +648,31 @@ with tab3:
             raw_bytes = f.read()
             # 헤더 행 찾기 (날짜 컬럼 있는 행)
             xl = pd.read_excel(io.BytesIO(raw_bytes), header=None)
-            header_row = 6  # 기본값
+            # 헤더 행 자동 감지
+            header_row = 6
             for i, row in xl.iterrows():
                 if "날짜" in str(row.values):
-                    header_row = i + 1  # 다음 행이 실제 데이터
+                    header_row = i
                     break
 
-            df = pd.read_excel(io.BytesIO(raw_bytes), header=header_row - 1, skiprows=[header_row])
-            # 컬럼 정리
-            col_map = {
-                df.columns[0]: "날짜",
-                df.columns[1]: "세션소스",
-                df.columns[2]: "세션캠페인",
-                df.columns[3]: "세션광고콘텐츠",
-                df.columns[4]: "세션검색어",
-                df.columns[5]: "방문수",
-                df.columns[6]: "참여세션수",
-                df.columns[7]: "세션수",
-                df.columns[8]: "장바구니",
-                df.columns[9]: "구매",
-                df.columns[10]: "총수익",
-            }
-            df.rename(columns=col_map, inplace=True)
+            df = pd.read_excel(io.BytesIO(raw_bytes), header=header_row, skiprows=[header_row + 1])
+
+            # 컬럼명 유연하게 매핑 (GA4 버전마다 컬럼명이 다를 수 있음)
+            ren = {}
+            for col in df.columns:
+                c = str(col).strip()
+                if c == "날짜":                          ren[col] = "날짜"
+                elif "소스" in c:                        ren[col] = "세션소스"
+                elif "캠페인" in c:                      ren[col] = "세션캠페인"
+                elif "광고 콘텐츠" in c or "광고콘텐츠" in c: ren[col] = "세션광고콘텐츠"
+                elif "검색어" in c:                      ren[col] = "세션검색어"
+                elif "방문수" in c:                      ren[col] = "방문수"
+                elif "참여" in c and "세션" in c:        ren[col] = "참여세션수"
+                elif "세션수" in c or c == "세션":       ren[col] = "세션수"
+                elif "장바구니" in c:                    ren[col] = "장바구니"
+                elif "구매" in c:                        ren[col] = "구매"
+                elif "수익" in c:                        ren[col] = "총수익"
+            df.rename(columns=ren, inplace=True)
 
             # 날짜 정리
             df["날짜"] = pd.to_datetime(
