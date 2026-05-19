@@ -153,7 +153,7 @@ if missing:
 NAVER_AD_ACCESS_LICENSE = "your_value"
 NAVER_AD_SECRET_KEY = "your_value"
 NAVER_CLIENT_ID = "your_value"
-NAVER_CLIENT_SECRET = "your_value"""")
+NAVER_CLIENT_SECRET = "your_value")
     st.stop()
 
 
