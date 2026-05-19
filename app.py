@@ -47,9 +47,18 @@ def build_campaign_key_v21(cid: str) -> str:
     parts = raw.split("_")
     prefix = parts[0].lower()
 
-    if "_adef-" in low:                                  return "Unknown"
-    if "_br_" in low:                                    return "Unknown"
-    if re.search(r"\.(com|instagram|youtube|facebook)", low): return "Unknown"
+    # ── 제거 대상 (행 자체를 없애야 하므로 "DELETE" 반환) ────────
+    if "_br_"  in low:                                              return "DELETE"  # 규칙4
+    if ".com"  in low:                                              return "DELETE"  # 규칙5
+    if re.search(r"\.(instagram|youtube|facebook)", low):           return "DELETE"
+    if "global-all-size-guide" in low:                              return "DELETE"  # 규칙6
+    # ── Unknown 필터 ──────────────────────────────────────────
+    if "_adef-" in low:                                             return "Unknown"
+    # 규칙2: ps_daum_daily_brandzone / ps_daum_campaign_brandzone → Unknown
+    if prefix == "ps" and "daum" in low and re.search(r"daum_(daily|campaign)_brandzone", low):
+        return "Unknown"
+    # 규칙3: ps_google pmax → Unknown
+    if "pmax" in low and prefix == "ps":                            return "Unknown"
 
     if prefix == "sms":
         return "dm-smsoptin-smspn-alwayson-na-na"
@@ -146,7 +155,8 @@ def build_campaign_key_v21(cid: str) -> str:
         if medium == "criteo":
             return f"dm-{get_funnel(seg7)}-criteo-alwayson-na-na"
         if medium == "kakao-kw":
-            return f"dm-{get_funnel(seg7)}-kakaokw-brand-alwayson-na-na"
+            # 규칙1: brand-alwayson-na-na → alwayson-na-na
+            return f"dm-{get_funnel(seg7)}-kakaokw-alwayson-na-na"
         if medium == "naver":
             funnel = get_funnel(seg7)
             if "catalog" in low: return f"dm-{funnel}-gfacatalog-alwayson-na-na"
@@ -207,10 +217,19 @@ def build_campaign_key_ga4(cid: str, search_term: str = "", ad_content: str = ""
 
     if raw.startswith("dm-"):
         return raw
-    if "_adef-" in low:  return "Unknown"
-    if "_br_"  in low:  return "Unknown"
-    if re.search(r"\.(com|instagram|youtube|facebook)", low): return "Unknown"
+    # ── 제거 대상 ─────────────────────────────────────────────
+    if "_br_"  in low:                                              return "DELETE"  # 규칙4
+    if ".com"  in low:                                              return "DELETE"  # 규칙5
+    if re.search(r"\.(instagram|youtube|facebook)", low):           return "DELETE"
+    if "global-all-size-guide" in low:                              return "DELETE"  # 규칙6
+    # ── Unknown 필터 ──────────────────────────────────────────
+    if "_adef-" in low:                                             return "Unknown"
     if raw in ["(not set)", "(organic)", "(referral)", "(direct)"]: return "Unknown"
+    # 규칙2: ps_daum_daily_brandzone / ps_daum_campaign_brandzone → Unknown
+    if prefix == "ps" and "daum" in low and re.search(r"daum_(daily|campaign)_brandzone", low):
+        return "Unknown"
+    # 규칙3: ps_google pmax → Unknown
+    if "pmax" in low and prefix == "ps":                            return "Unknown"
 
     if prefix == "sms":
         return "dm-smsoptin-smspn-alwayson-na-na"
@@ -296,7 +315,8 @@ def build_campaign_key_ga4(cid: str, search_term: str = "", ad_content: str = ""
         if medium == "criteo":
             return f"dm-{get_funnel(seg6)}-criteo-alwayson-na-na"
         if medium == "kakao-kw":
-            return f"dm-{get_funnel(seg6)}-kakaokw-brand-alwayson-na-na"
+            # 규칙1: brand-alwayson-na-na → alwayson-na-na
+            return f"dm-{get_funnel(seg6)}-kakaokw-alwayson-na-na"
         if medium == "naver":
             funnel = get_funnel(seg6)
             if "catalog" in low: return f"dm-{funnel}-gfacatalog-alwayson-na-na"
@@ -344,7 +364,7 @@ COLUMN_MAP_TSV = {
 
 def parse_ga4_tsv(raw_bytes: bytes) -> pd.DataFrame:
     """TSV 바이트 → 정규화된 DataFrame"""
-    for enc in ["utf-8-sig", "utf-16", "utf-8", "euc-kr"]:
+    for enc in ["utf-8-sig", "utf-8", "utf-16", "euc-kr"]:
         try:
             text = raw_bytes.decode(enc)
             break
@@ -353,17 +373,29 @@ def parse_ga4_tsv(raw_bytes: bytes) -> pd.DataFrame:
     else:
         raise ValueError("파일 인코딩을 읽을 수 없어요.")
 
-    lines = text.splitlines()
+    lines = text.splitlines(keepends=True)
+
+    # 헤더 행 찾기 (# 주석·빈 행 건너뜀)
     header_row = None
+    summary_row = None
     for i, line in enumerate(lines):
+        if line.startswith("#") or line.strip() == "":
+            continue
         cols = [c.strip() for c in line.split("\t")]
         if any(k in " ".join(cols) for k in ["날짜", "세션", "Date", "Session", "Campaign"]):
             header_row = i
+            # 바로 다음 줄 첫 컬럼이 비어있으면 합계 행 → skip
+            if i + 1 < len(lines) and lines[i + 1].split("\t")[0].strip() == "":
+                summary_row = i + 1
             break
+
     if header_row is None:
         raise ValueError("헤더 행을 찾을 수 없어요.")
 
-    df = pd.read_csv(io.StringIO(text), sep="\t", header=header_row)
+    header_cols = [c.strip() for c in lines[header_row].strip().split("\t")]
+    data_lines = [line for i, line in enumerate(lines) if i > header_row and i != summary_row]
+
+    df = pd.read_csv(io.StringIO("".join(data_lines)), sep="\t", header=None, names=header_cols)
 
     # 하단 합계 행 제거
     first_col = df.columns[0]
@@ -427,6 +459,7 @@ with tab1:
 
         full_adobe = pd.concat(all_dfs, ignore_index=True)
         full_adobe["AI_제안명"] = full_adobe["코드"].apply(build_campaign_key_v21)
+        full_adobe = full_adobe[full_adobe["AI_제안명"] != "DELETE"].reset_index(drop=True)
 
         total = len(full_adobe)
         unk = (full_adobe["AI_제안명"] == "Unknown").sum()
@@ -636,6 +669,7 @@ with tab3:
             all_ga4.append(df)
 
         full_ga4 = pd.concat(all_ga4, ignore_index=True)
+        full_ga4 = full_ga4[full_ga4["AI_제안명"] != "DELETE"].reset_index(drop=True)
         total = len(full_ga4)
         unk = (full_ga4["AI_제안명"] == "Unknown").sum()
         st.info(f"✅ 총 {total}행 | ⚠️ Unknown: {unk}행 ({unk/total*100:.1f}%)")
@@ -673,25 +707,9 @@ with tab4:
                 raw_bytes = f.read()
                 df = parse_ga4_tsv(raw_bytes)
 
-                # 캠페인명 변환 컬럼 추가
-                if "세션캠페인" in df.columns:
-                    df.insert(
-                        df.columns.get_loc("세션캠페인") + 1,
-                        "AI_제안명",
-                        df.apply(
-                            lambda r: build_campaign_key_ga4(
-                                r["세션캠페인"],
-                                r.get("세션검색어", ""),
-                                r.get("세션광고콘텐츠", "")
-                            ), axis=1
-                        )
-                    )
-                    unk_cnt = (df["AI_제안명"] == "Unknown").sum()
-                    st.info(f"✅ {len(df)}행 | ⚠️ Unknown: {unk_cnt}행")
-
+                st.info(f"✅ {len(df)}행 변환 완료")
                 st.dataframe(df.head(500))
 
-                # Excel 변환 후 다운로드
                 out = io.BytesIO()
                 with pd.ExcelWriter(out, engine="openpyxl") as writer:
                     df.to_excel(writer, index=False, sheet_name="GA4 데이터")
