@@ -1,5 +1,5 @@
 """
-Streamlit 대시보드 - 키워드 검색량 + 블로그/카페 수집만
+Streamlit 대시보드 - 키워드 검색량 + 블로그/카페 수집
 분석은 Claude.ai 에 붙여넣기해서 사용
 """
 import os
@@ -20,8 +20,16 @@ st.markdown("""
 <style>
 .kw-chip { display:inline-block; background:#f1f3f4; border-radius:16px; padding:4px 12px; margin:3px; font-size:13px; color:#333; }
 .tip-box { background:#e8f4fd; border-left:4px solid #1a73e8; border-radius:4px; padding:12px 16px; font-size:13px; margin:12px 0; }
+.source-tag { font-size:11px; color:#888; margin-top:4px; }
 </style>
 """, unsafe_allow_html=True)
+
+
+def to_int(val):
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return 0
 
 
 def get_ad_headers(method, path):
@@ -42,32 +50,54 @@ def strip_html(text):
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_keyword_stats(keywords_tuple):
+def fetch_keyword_stats(keywords_tuple, expand=False):
     path = "/keywordstool"
     url = "https://api.naver.com" + path
     results = []
-    for i in range(0, len(keywords_tuple), 5):
-        batch = list(keywords_tuple[i:i+5])
+    seen = set()
+
+    def fetch_batch(batch):
         try:
             headers = get_ad_headers("GET", path)
-            resp = requests.get(url, headers=headers, params={"hintKeywords": ",".join(batch), "showDetail": 1}, timeout=10)
+            resp = requests.get(url, headers=headers,
+                                params={"hintKeywords": ",".join(batch), "showDetail": 1},
+                                timeout=10)
             resp.raise_for_status()
             for item in resp.json().get("keywordList", []):
+                kw = str(item.get("relKeyword", ""))
+                if kw in seen:
+                    continue
+                seen.add(kw)
+                pc = to_int(item.get("monthlyPcQcCnt", 0))
+                mobile = to_int(item.get("monthlyMobileQcCnt", 0))
                 results.append({
-                    "keyword": item["relKeyword"],
-                    "monthly_pc": item["monthlyPcQcCnt"],
-                    "monthly_mobile": item["monthlyMobileQcCnt"],
-                    "monthly_total": item["monthlyPcQcCnt"] + item["monthlyMobileQcCnt"],
-                    "competition": item.get("compIdx", "-"),
+                    "keyword": kw,
+                    "monthly_pc": pc,
+                    "monthly_mobile": mobile,
+                    "monthly_total": pc + mobile,
+                    "competition": str(item.get("compIdx", "-")),
+                    "expanded": kw not in keywords_tuple,
                 })
         except Exception as e:
             st.warning(f"검색광고 API 오류: {e}")
         time.sleep(0.3)
+
+    # 입력 키워드 수집
+    for i in range(0, len(keywords_tuple), 5):
+        batch = list(keywords_tuple[i:i+5])
+        fetch_batch(batch)
+
+    # 연관 키워드 확장 수집
+    if expand:
+        related_seeds = list(keywords_tuple)[:3]
+        for kw in related_seeds:
+            fetch_batch([kw])
+
     return results
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_blog_cafe(keyword, display=10):
+def fetch_blog_cafe(keyword, display=100):
     headers = {
         "X-Naver-Client-Id": os.environ["NAVER_CLIENT_ID"],
         "X-Naver-Client-Secret": os.environ["NAVER_CLIENT_SECRET"],
@@ -98,12 +128,12 @@ def fetch_blog_cafe(keyword, display=10):
 def build_prompt(keywords, stats, posts):
     stats_text = "\n".join([
         f"- {s['keyword']}: 월 {s['monthly_total']:,}회 (PC {s['monthly_pc']:,} / 모바일 {s['monthly_mobile']:,}, 경쟁도: {s['competition']})"
-        for s in sorted(stats, key=lambda x: x["monthly_total"], reverse=True)[:15]
+        for s in sorted(stats, key=lambda x: x["monthly_total"], reverse=True)[:20]
     ]) if stats else "데이터 없음"
 
     posts_text = "\n".join([
         f"[{p['type']}] {p['title']} / {p['description']}"
-        for p in posts[:20]
+        for p in posts[:30]
     ]) if posts else "데이터 없음"
 
     lines = [
@@ -111,10 +141,10 @@ def build_prompt(keywords, stats, posts):
         "",
         f"키워드: {', '.join(keywords)}",
         "",
-        "[검색량 데이터]",
+        "[검색량 데이터 - 네이버 검색광고 API 기준 월간 검색량]",
         stats_text,
         "",
-        "[블로그/카페 게시글]",
+        "[블로그/카페 게시글 - 최신순 수집]",
         posts_text,
         "",
         "아래 내용 분석해줘:",
@@ -129,7 +159,8 @@ def build_prompt(keywords, stats, posts):
 
 
 # 환경변수 체크
-required_envs = ["NAVER_AD_CUSTOMER_ID", "NAVER_AD_ACCESS_LICENSE", "NAVER_AD_SECRET_KEY", "NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"]
+required_envs = ["NAVER_AD_CUSTOMER_ID", "NAVER_AD_ACCESS_LICENSE", "NAVER_AD_SECRET_KEY",
+                 "NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"]
 missing = [e for e in required_envs if not os.environ.get(e)]
 if missing:
     st.error(f"환경변수 미설정: {', '.join(missing)}")
@@ -156,6 +187,9 @@ with col_input:
 with col_btn:
     run_btn = st.button("🔍 수집", use_container_width=True, type="primary")
 
+# 옵션
+expand_kw = st.checkbox("🔗 연관 키워드 자동 확장 (입력 키워드 기반으로 관련 키워드 추가 수집)", value=False)
+
 if st.session_state.history:
     st.markdown("**최근 검색:**")
     hist_cols = st.columns(min(len(st.session_state.history), 6))
@@ -178,9 +212,9 @@ if run_btn and keyword_input.strip():
     st.markdown(f"**수집 키워드:** {chips}", unsafe_allow_html=True)
 
     with st.spinner("📡 검색량 수집 중..."):
-        stats = fetch_keyword_stats(tuple(keywords))
+        stats = fetch_keyword_stats(tuple(keywords), expand=expand_kw)
 
-    with st.spinner("📝 블로그/카페 수집 중..."):
+    with st.spinner("📝 블로그/카페 수집 중... (최대 100건/키워드)"):
         all_posts = []
         for kw in keywords:
             all_posts.extend(fetch_blog_cafe(kw))
@@ -193,7 +227,21 @@ if run_btn and keyword_input.strip():
         if not stats:
             st.info("검색광고 API 데이터가 없습니다.")
         else:
-            df = pd.DataFrame(stats).sort_values("monthly_total", ascending=False)
+            st.caption("출처: 네이버 검색광고 API (api.naver.com) · 월간 검색량 기준")
+
+            df = pd.DataFrame(stats)
+            df["monthly_total"] = pd.to_numeric(df["monthly_total"], errors="coerce").fillna(0).astype(int)
+            df["monthly_pc"] = pd.to_numeric(df["monthly_pc"], errors="coerce").fillna(0).astype(int)
+            df["monthly_mobile"] = pd.to_numeric(df["monthly_mobile"], errors="coerce").fillna(0).astype(int)
+            df = df.sort_values("monthly_total", ascending=False)
+
+            # 확장 키워드 구분 표시
+            if expand_kw and "expanded" in df.columns:
+                input_df = df[~df["expanded"]]
+                expanded_df = df[df["expanded"]]
+                if not expanded_df.empty:
+                    st.markdown(f"입력 키워드 **{len(input_df)}개** + 연관 확장 **{len(expanded_df)}개**")
+
             top3 = df.head(3)
             cols = st.columns(min(3, len(top3)))
             for i, (_, row) in enumerate(top3.iterrows()):
@@ -201,14 +249,15 @@ if run_btn and keyword_input.strip():
                     st.metric(row["keyword"], f"{row['monthly_total']:,}",
                               f"PC {row['monthly_pc']:,} / 모바일 {row['monthly_mobile']:,}")
 
-            fig = px.bar(df.head(15), x="keyword", y="monthly_total",
+            fig = px.bar(df.head(20), x="keyword", y="monthly_total",
                          color="monthly_total", color_continuous_scale="Greens",
                          labels={"keyword": "키워드", "monthly_total": "월간 검색량"})
             fig.update_layout(coloraxis_showscale=False, height=380)
             st.plotly_chart(fig, use_container_width=True)
 
+            show_cols = ["keyword", "monthly_total", "monthly_pc", "monthly_mobile", "competition"]
             st.dataframe(
-                df[["keyword", "monthly_total", "monthly_pc", "monthly_mobile", "competition"]].rename(
+                df[show_cols].rename(
                     columns={"keyword": "키워드", "monthly_total": "합계", "monthly_pc": "PC",
                              "monthly_mobile": "모바일", "competition": "경쟁도"}
                 ), hide_index=True, use_container_width=True
@@ -220,6 +269,8 @@ if run_btn and keyword_input.strip():
         if not all_posts:
             st.info("수집된 게시글이 없습니다.")
         else:
+            st.caption("출처: 네이버 Open API · 최신순 수집 · 키워드당 최대 100건 (블로그 + 카페)")
+
             df_posts = pd.DataFrame(all_posts)
             source_filter = st.multiselect("출처 필터", ["블로그", "카페"], default=["블로그", "카페"])
             filtered = df_posts[df_posts["type"].isin(source_filter)]
