@@ -378,13 +378,18 @@ def parse_ga4_tsv(raw_bytes: bytes) -> pd.DataFrame:
     # 헤더 행 찾기 (# 주석·빈 행 건너뜀)
     header_row = None
     summary_row = None
+    segment_row = None  # 세그먼트 그룹 행 (방문수, 세션수 등의 소속 세그먼트 표시)
     for i, line in enumerate(lines):
         if line.startswith("#") or line.strip() == "":
             continue
         cols = [c.strip() for c in line.split("\t")]
-        if any(k in " ".join(cols) for k in ["날짜", "세션", "Date", "Session", "Campaign"]):
+        joined = " ".join(cols)
+        # 세그먼트 그룹 행: 첫 컬럼 비어있고 세그먼트/총계 키워드 포함
+        if cols[0] == "" and any(k in joined for k in ["세그먼트", "총계", "Segment", "Total", "유료"]):
+            segment_row = i
+            continue
+        if any(k in joined for k in ["날짜", "세션", "Date", "Session", "Campaign"]):
             header_row = i
-            # 바로 다음 줄 첫 컬럼이 비어있으면 합계 행 → skip
             if i + 1 < len(lines) and lines[i + 1].split("\t")[0].strip() == "":
                 summary_row = i + 1
             break
@@ -392,8 +397,35 @@ def parse_ga4_tsv(raw_bytes: bytes) -> pd.DataFrame:
     if header_row is None:
         raise ValueError("헤더 행을 찾을 수 없어요.")
 
+    # 헤더 컬럼명 구성 (세그먼트 그룹 행 있으면 이름 붙이기)
+    DIMENSION_COLS = {"세션 매체", "세션 소스", "세션 캠페인", "세션 수동 광고 콘텐츠",
+                      "세션 수동 검색어", "날짜", "세션광고콘텐츠", "세션검색어"}
+
     header_cols = [c.strip() for c in lines[header_row].strip().split("\t")]
-    data_lines = [line for i, line in enumerate(lines) if i > header_row and i != summary_row]
+    if segment_row is not None:
+        seg_raw = [c.strip() for c in lines[segment_row].strip().split("\t")]
+        seg_raw += [""] * (len(header_cols) - len(seg_raw))
+        # forward-fill (빈 칸은 앞 세그먼트명으로 채움, "세그먼트" 자체는 무시)
+        seg_filled, current_seg = [], ""
+        for s in seg_raw:
+            if s and s != "세그먼트":
+                current_seg = s
+            seg_filled.append(current_seg)
+        # 컬럼명 생성 (차원 컬럼 제외, 중복 시 .1 .2 suffix)
+        seen_count = {}
+        final_cols = []
+        for col, seg in zip(header_cols, seg_filled):
+            if col in DIMENSION_COLS or not seg:
+                final_cols.append(col)
+            else:
+                key = f"{col} ({seg})"
+                cnt = seen_count.get(key, 0)
+                seen_count[key] = cnt + 1
+                final_cols.append(key if cnt == 0 else f"{key}.{cnt}")
+        header_cols = final_cols
+
+    data_lines = [line for i, line in enumerate(lines)
+                  if i > header_row and i != summary_row]
 
     df = pd.read_csv(io.StringIO("".join(data_lines)), sep="\t", header=None, names=header_cols)
 
