@@ -197,12 +197,11 @@ if missing:
     st.error(f"⚠️ 환경변수 미설정: {', '.join(missing)}")
     st.code("""
 # Streamlit Cloud → App settings → Secrets 에 아래 형식으로 입력
-NAVER_AD_CUSTOMER_ID = "your_value"
-NAVER_AD_ACCESS_LICENSE = "your_value"
-NAVER_AD_SECRET_KEY = "your_value"
-NAVER_CLIENT_ID = "your_value"
-NAVER_CLIENT_SECRET = "your_value"
-ANTHROPIC_API_KEY = "your_value"
+NAVER_AD_CUSTOMER_ID = "여기에입력"
+NAVER_AD_ACCESS_LICENSE = "여기에입력"
+NAVER_AD_SECRET_KEY = "여기에입력"
+NAVER_CLIENT_ID = "여기에입력"
+NAVER_CLIENT_SECRET = "여기에입력"
     """)
     st.stop()
 
