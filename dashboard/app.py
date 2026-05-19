@@ -9,6 +9,7 @@ import re
 import hmac
 import hashlib
 import base64
+from collections import Counter
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -20,17 +21,32 @@ st.markdown("""
 <style>
 .kw-chip { display:inline-block; background:#f1f3f4; border-radius:16px; padding:4px 12px; margin:3px; font-size:13px; color:#333; }
 .tip-box { background:#e8f4fd; border-left:4px solid #1a73e8; border-radius:4px; padding:12px 16px; font-size:13px; margin:12px 0; }
-.source-tag { font-size:11px; color:#888; margin-top:4px; }
+.freq-high { display:inline-block; background:#1a73e8; color:white; border-radius:16px; padding:5px 14px; margin:3px; font-size:13px; font-weight:500; }
+.freq-mid  { display:inline-block; background:#4a9ef5; color:white; border-radius:16px; padding:4px 12px; margin:3px; font-size:12px; }
+.freq-low  { display:inline-block; background:#d0e6fd; color:#1a73e8; border-radius:16px; padding:3px 10px; margin:3px; font-size:11px; }
 </style>
 """, unsafe_allow_html=True)
 
+STOPWORDS = {
+    "이","가","을","를","은","는","의","에","와","과","도","로","으로","에서",
+    "이다","있다","하다","되다","이런","저런","그런","그냥","너무","정말","진짜",
+    "그리고","그래서","하지만","근데","그게","이게","저게","것","수","때","더",
+    "잘","좀","많이","제","내","그","저","이","한","할","하고","있어","없어",
+    "같아","같은","때문","통해","위해","대한","관련","라고","이라","에도","에서",
+    "부터","까지","이나","거나","라는","이는","에는","으로는","에게","한테",
+}
+
+def extract_top_keywords(posts, top_n=30):
+    text = " ".join([p.get("title","") + " " + p.get("description","") for p in posts])
+    words = re.findall(r"[가-힣]{2,}", text)
+    filtered = [w for w in words if w not in STOPWORDS]
+    return Counter(filtered).most_common(top_n)
 
 def to_int(val):
     try:
         return int(val)
     except (ValueError, TypeError):
         return 0
-
 
 def get_ad_headers(method, path):
     ts = str(int(time.time() * 1000))
@@ -44,10 +60,8 @@ def get_ad_headers(method, path):
         "X-Signature": base64.b64encode(sig.digest()).decode(),
     }
 
-
 def strip_html(text):
-    return re.sub(r"<[^>]+>", "", text).replace("&quot;", '"').replace("&amp;", "&").strip()
-
+    return re.sub(r"<[^>]+>", "", text).replace("&quot;",'"').replace("&amp;","&").strip()
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_keyword_stats(keywords_tuple, expand=False):
@@ -82,19 +96,12 @@ def fetch_keyword_stats(keywords_tuple, expand=False):
             st.warning(f"검색광고 API 오류: {e}")
         time.sleep(0.3)
 
-    # 입력 키워드 수집
     for i in range(0, len(keywords_tuple), 5):
-        batch = list(keywords_tuple[i:i+5])
-        fetch_batch(batch)
-
-    # 연관 키워드 확장 수집
+        fetch_batch(list(keywords_tuple[i:i+5]))
     if expand:
-        related_seeds = list(keywords_tuple)[:3]
-        for kw in related_seeds:
+        for kw in list(keywords_tuple)[:3]:
             fetch_batch([kw])
-
     return results
-
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_blog_cafe(keyword, display=100):
@@ -124,8 +131,7 @@ def fetch_blog_cafe(keyword, display=100):
             st.warning(f"Open API 오류 ({source}): {e}")
     return results
 
-
-def build_prompt(keywords, stats, posts):
+def build_prompt(keywords, stats, posts, top_kws):
     stats_text = "\n".join([
         f"- {s['keyword']}: 월 {s['monthly_total']:,}회 (PC {s['monthly_pc']:,} / 모바일 {s['monthly_mobile']:,}, 경쟁도: {s['competition']})"
         for s in sorted(stats, key=lambda x: x["monthly_total"], reverse=True)[:20]
@@ -136,6 +142,8 @@ def build_prompt(keywords, stats, posts):
         for p in posts[:30]
     ]) if posts else "데이터 없음"
 
+    top_kw_text = ", ".join([f"{w}({c}회)" for w, c in top_kws[:20]]) if top_kws else "없음"
+
     lines = [
         "다음은 네이버에서 수집한 키워드 데이터예요. 분석해줘.",
         "",
@@ -144,7 +152,9 @@ def build_prompt(keywords, stats, posts):
         "[검색량 데이터 - 네이버 검색광고 API 기준 월간 검색량]",
         stats_text,
         "",
-        "[블로그/카페 게시글 - 최신순 수집]",
+        f"[블로그/카페 자주 등장 키워드]\n{top_kw_text}",
+        "",
+        "[블로그/카페 게시글 - 최신순]",
         posts_text,
         "",
         "아래 내용 분석해줘:",
@@ -166,7 +176,6 @@ if missing:
     st.error(f"환경변수 미설정: {', '.join(missing)}")
     st.stop()
 
-
 # UI
 st.title("📊 키워드 수집 대시보드")
 st.caption("네이버 검색광고 + 블로그/카페 수집 → Claude.ai에서 분석")
@@ -187,8 +196,7 @@ with col_input:
 with col_btn:
     run_btn = st.button("🔍 수집", use_container_width=True, type="primary")
 
-# 옵션
-expand_kw = st.checkbox("🔗 연관 키워드 자동 확장 (입력 키워드 기반으로 관련 키워드 추가 수집)", value=False)
+expand_kw = st.checkbox("🔗 연관 키워드 자동 확장", value=False)
 
 if st.session_state.history:
     st.markdown("**최근 검색:**")
@@ -202,7 +210,7 @@ if st.session_state.history:
 st.divider()
 
 if run_btn and keyword_input.strip():
-    keywords = [k.strip() for k in keyword_input.replace("，", ",").split(",") if k.strip()]
+    keywords = [k.strip() for k in keyword_input.replace("，",",").split(",") if k.strip()]
     joined = ", ".join(keywords)
     if joined not in st.session_state.history:
         st.session_state.history.insert(0, joined)
@@ -219,6 +227,9 @@ if run_btn and keyword_input.strip():
         for kw in keywords:
             all_posts.extend(fetch_blog_cafe(kw))
 
+    # 자주 등장 키워드 추출
+    top_kws = extract_top_keywords(all_posts, top_n=30)
+
     st.success(f"✅ 수집 완료! 키워드 {len(stats)}개 / 게시글 {len(all_posts)}건")
 
     tab1, tab2, tab3 = st.tabs(["📈 검색량", "📝 블로그/카페", "🤖 Claude 분석용 복사"])
@@ -227,20 +238,12 @@ if run_btn and keyword_input.strip():
         if not stats:
             st.info("검색광고 API 데이터가 없습니다.")
         else:
-            st.caption("출처: 네이버 검색광고 API (api.naver.com) · 월간 검색량 기준")
-
+            st.caption("출처: 네이버 검색광고 API · 월간 검색량 기준")
             df = pd.DataFrame(stats)
             df["monthly_total"] = pd.to_numeric(df["monthly_total"], errors="coerce").fillna(0).astype(int)
             df["monthly_pc"] = pd.to_numeric(df["monthly_pc"], errors="coerce").fillna(0).astype(int)
             df["monthly_mobile"] = pd.to_numeric(df["monthly_mobile"], errors="coerce").fillna(0).astype(int)
             df = df.sort_values("monthly_total", ascending=False)
-
-            # 확장 키워드 구분 표시
-            if expand_kw and "expanded" in df.columns:
-                input_df = df[~df["expanded"]]
-                expanded_df = df[df["expanded"]]
-                if not expanded_df.empty:
-                    st.markdown(f"입력 키워드 **{len(input_df)}개** + 연관 확장 **{len(expanded_df)}개**")
 
             top3 = df.head(3)
             cols = st.columns(min(3, len(top3)))
@@ -255,11 +258,10 @@ if run_btn and keyword_input.strip():
             fig.update_layout(coloraxis_showscale=False, height=380)
             st.plotly_chart(fig, use_container_width=True)
 
-            show_cols = ["keyword", "monthly_total", "monthly_pc", "monthly_mobile", "competition"]
             st.dataframe(
-                df[show_cols].rename(
-                    columns={"keyword": "키워드", "monthly_total": "합계", "monthly_pc": "PC",
-                             "monthly_mobile": "모바일", "competition": "경쟁도"}
+                df[["keyword","monthly_total","monthly_pc","monthly_mobile","competition"]].rename(
+                    columns={"keyword":"키워드","monthly_total":"합계","monthly_pc":"PC",
+                             "monthly_mobile":"모바일","competition":"경쟁도"}
                 ), hide_index=True, use_container_width=True
             )
             st.download_button("📥 검색량 CSV", df.to_csv(index=False, encoding="utf-8-sig"),
@@ -271,22 +273,50 @@ if run_btn and keyword_input.strip():
         else:
             st.caption("출처: 네이버 Open API · 최신순 수집 · 키워드당 최대 100건 (블로그 + 카페)")
 
+            source_filter = st.multiselect("출처 필터", ["블로그","카페"], default=["블로그","카페"])
             df_posts = pd.DataFrame(all_posts)
-            source_filter = st.multiselect("출처 필터", ["블로그", "카페"], default=["블로그", "카페"])
             filtered = df_posts[df_posts["type"].isin(source_filter)]
             st.dataframe(
-                filtered[["type", "title", "description", "date"]].rename(
-                    columns={"type": "출처", "title": "제목", "description": "내용", "date": "날짜"}
-                ), hide_index=True, use_container_width=True, height=400
+                filtered[["type","title","description","date"]].rename(
+                    columns={"type":"출처","title":"제목","description":"내용","date":"날짜"}
+                ), hide_index=True, use_container_width=True, height=380
             )
             st.download_button("📥 게시글 CSV", filtered.to_csv(index=False, encoding="utf-8-sig"),
                 file_name=f"게시글_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
 
+            # 자주 등장 키워드
+            if top_kws:
+                st.divider()
+                st.markdown("#### 📌 자주 등장한 키워드 TOP 30")
+                st.caption("블로그/카페 게시글 제목 + 내용 기준 · 클수록 많이 등장")
+
+                max_count = top_kws[0][1] if top_kws else 1
+                chips_html = ""
+                for word, count in top_kws:
+                    ratio = count / max_count
+                    if ratio >= 0.6:
+                        cls = "freq-high"
+                    elif ratio >= 0.3:
+                        cls = "freq-mid"
+                    else:
+                        cls = "freq-low"
+                    chips_html += f'<span class="{cls}">{word} <strong>{count}</strong></span>'
+                st.markdown(chips_html, unsafe_allow_html=True)
+
+                st.markdown("")
+                # 바 차트
+                df_freq = pd.DataFrame(top_kws[:20], columns=["키워드", "등장 횟수"])
+                fig2 = px.bar(df_freq, x="키워드", y="등장 횟수",
+                              color="등장 횟수", color_continuous_scale="Blues",
+                              height=300)
+                fig2.update_layout(coloraxis_showscale=False)
+                st.plotly_chart(fig2, use_container_width=True)
+
     with tab3:
-        st.markdown('<div class="tip-box">💡 아래 내용을 전체 복사해서 <strong>Claude.ai 채팅창</strong>에 붙여넣으면 바로 분석해드려요!</div>', unsafe_allow_html=True)
-        prompt = build_prompt(keywords, stats, all_posts)
+        st.markdown('<div class="tip-box">💡 아래 내용을 전체 복사해서 <strong>Claude.ai 채팅창</strong>에 붙여넣으면 1~6번 분석 결과를 바로 받을 수 있어요!</div>', unsafe_allow_html=True)
+        prompt = build_prompt(keywords, stats, all_posts, top_kws)
         st.text_area("Claude 분석 프롬프트", value=prompt, height=420, label_visibility="collapsed")
-        st.caption("텍스트박스 클릭 → Ctrl+A (전체선택) → Ctrl+C (복사)")
+        st.caption("텍스트박스 클릭 → Ctrl+A (전체선택) → Ctrl+C (복사) → Claude.ai에 붙여넣기")
 
 elif run_btn:
     st.warning("키워드를 입력해주세요.")
