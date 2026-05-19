@@ -2,7 +2,6 @@
 Streamlit 대시보드 - 키워드 검색량 + 블로그/카페 수집만
 분석은 Claude.ai 에 붙여넣기해서 사용
 """
-import json
 import os
 import time
 import requests
@@ -15,58 +14,43 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 
-st.set_page_config(
-    page_title="키워드 수집 대시보드",
-    page_icon="📊",
-    layout="wide",
-)
+st.set_page_config(page_title="키워드 수집 대시보드", page_icon="📊", layout="wide")
 
 st.markdown("""
 <style>
-.kw-chip {
-    display: inline-block; background: #f1f3f4;
-    border-radius: 16px; padding: 4px 12px;
-    margin: 3px; font-size: 13px; color: #333;
-}
-.tip-box {
-    background: #e8f4fd; border-left: 4px solid #1a73e8;
-    border-radius: 4px; padding: 12px 16px;
-    font-size: 13px; margin: 12px 0;
-}
+.kw-chip { display:inline-block; background:#f1f3f4; border-radius:16px; padding:4px 12px; margin:3px; font-size:13px; color:#333; }
+.tip-box { background:#e8f4fd; border-left:4px solid #1a73e8; border-radius:4px; padding:12px 16px; font-size:13px; margin:12px 0; }
 </style>
 """, unsafe_allow_html=True)
 
 
-def get_ad_headers(method: str, path: str) -> dict:
+def get_ad_headers(method, path):
     ts = str(int(time.time() * 1000))
     msg = f"{ts}.{method}.{path}"
     sig = hmac.new(os.environ["NAVER_AD_SECRET_KEY"].encode(), msg.encode(), hashlib.sha256)
-    signature = base64.b64encode(sig.digest()).decode()
     return {
         "Content-Type": "application/json; charset=UTF-8",
         "X-Timestamp": ts,
         "X-API-KEY": os.environ["NAVER_AD_ACCESS_LICENSE"],
         "X-Customer": os.environ["NAVER_AD_CUSTOMER_ID"],
-        "X-Signature": signature,
+        "X-Signature": base64.b64encode(sig.digest()).decode(),
     }
 
 
-def strip_html(text: str) -> str:
+def strip_html(text):
     return re.sub(r"<[^>]+>", "", text).replace("&quot;", '"').replace("&amp;", "&").strip()
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_keyword_stats(keywords_tuple: tuple) -> list:
-    keywords = list(keywords_tuple)
+def fetch_keyword_stats(keywords_tuple):
     path = "/keywordstool"
     url = "https://api.naver.com" + path
     results = []
-    for i in range(0, len(keywords), 5):
-        batch = keywords[i:i+5]
+    for i in range(0, len(keywords_tuple), 5):
+        batch = list(keywords_tuple[i:i+5])
         try:
             headers = get_ad_headers("GET", path)
-            params = {"hintKeywords": ",".join(batch), "showDetail": 1}
-            resp = requests.get(url, headers=headers, params=params, timeout=10)
+            resp = requests.get(url, headers=headers, params={"hintKeywords": ",".join(batch), "showDetail": 1}, timeout=10)
             resp.raise_for_status()
             for item in resp.json().get("keywordList", []):
                 results.append({
@@ -83,7 +67,7 @@ def fetch_keyword_stats(keywords_tuple: tuple) -> list:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_blog_cafe(keyword: str, display: int = 10) -> list:
+def fetch_blog_cafe(keyword, display=10):
     headers = {
         "X-Naver-Client-Id": os.environ["NAVER_CLIENT_ID"],
         "X-Naver-Client-Secret": os.environ["NAVER_CLIENT_SECRET"],
@@ -111,7 +95,7 @@ def fetch_blog_cafe(keyword: str, display: int = 10) -> list:
     return results
 
 
-def build_claude_prompt(keywords: list, stats: list, posts: list) -> str:
+def build_prompt(keywords, stats, posts):
     stats_text = "\n".join([
         f"- {s['keyword']}: 월 {s['monthly_total']:,}회 (PC {s['monthly_pc']:,} / 모바일 {s['monthly_mobile']:,}, 경쟁도: {s['competition']})"
         for s in sorted(stats, key=lambda x: x["monthly_total"], reverse=True)[:15]
@@ -122,38 +106,33 @@ def build_claude_prompt(keywords: list, stats: list, posts: list) -> str:
         for p in posts[:20]
     ]) if posts else "데이터 없음"
 
-    return f"""다음은 네이버에서 수집한 키워드 데이터예요. 분석해줘.
-
-키워드: {', '.join(keywords)}
-
-[검색량 데이터]
-{stats_text}
-
-[블로그/카페 게시글]
-{posts_text}
-
-아래 내용 분석해줘:
-1. 트렌드 요약 (2줄)
-2. 소비자 페인포인트 5개
-3. 혜택/결과 키워드 5개
-4. 광고 카피 소재 키워드 8개
-5. 네이버 검색광고 헤드카피 6개 (상황/기능/감성 각 2개씩, 15자 이내)
-6. 광고 집행 타이밍 인사이트"""
+    lines = [
+        "다음은 네이버에서 수집한 키워드 데이터예요. 분석해줘.",
+        "",
+        f"키워드: {', '.join(keywords)}",
+        "",
+        "[검색량 데이터]",
+        stats_text,
+        "",
+        "[블로그/카페 게시글]",
+        posts_text,
+        "",
+        "아래 내용 분석해줘:",
+        "1. 트렌드 요약 (2줄)",
+        "2. 소비자 페인포인트 5개",
+        "3. 혜택/결과 키워드 5개",
+        "4. 광고 카피 소재 키워드 8개",
+        "5. 네이버 검색광고 헤드카피 6개 (상황/기능/감성 각 2개씩, 15자 이내)",
+        "6. 광고 집행 타이밍 인사이트",
+    ]
+    return "\n".join(lines)
 
 
 # 환경변수 체크
-required_envs = [
-    "NAVER_AD_CUSTOMER_ID", "NAVER_AD_ACCESS_LICENSE", "NAVER_AD_SECRET_KEY",
-    "NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET",
-]
+required_envs = ["NAVER_AD_CUSTOMER_ID", "NAVER_AD_ACCESS_LICENSE", "NAVER_AD_SECRET_KEY", "NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"]
 missing = [e for e in required_envs if not os.environ.get(e)]
 if missing:
-    st.error(f"⚠️ 환경변수 미설정: {', '.join(missing)}")
-    st.code("""NAVER_AD_CUSTOMER_ID = "your_value"
-NAVER_AD_ACCESS_LICENSE = "your_value"
-NAVER_AD_SECRET_KEY = "your_value"
-NAVER_CLIENT_ID = "your_value"
-NAVER_CLIENT_SECRET = "your_value")
+    st.error(f"환경변수 미설정: {', '.join(missing)}")
     st.stop()
 
 
@@ -230,12 +209,11 @@ if run_btn and keyword_input.strip():
 
             st.dataframe(
                 df[["keyword", "monthly_total", "monthly_pc", "monthly_mobile", "competition"]].rename(
-                    columns={"keyword": "키워드", "monthly_total": "합계",
-                             "monthly_pc": "PC", "monthly_mobile": "모바일", "competition": "경쟁도"}
+                    columns={"keyword": "키워드", "monthly_total": "합계", "monthly_pc": "PC",
+                             "monthly_mobile": "모바일", "competition": "경쟁도"}
                 ), hide_index=True, use_container_width=True
             )
-            st.download_button("📥 검색량 CSV",
-                df.to_csv(index=False, encoding="utf-8-sig"),
+            st.download_button("📥 검색량 CSV", df.to_csv(index=False, encoding="utf-8-sig"),
                 file_name=f"검색량_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
 
     with tab2:
@@ -250,13 +228,12 @@ if run_btn and keyword_input.strip():
                     columns={"type": "출처", "title": "제목", "description": "내용", "date": "날짜"}
                 ), hide_index=True, use_container_width=True, height=400
             )
-            st.download_button("📥 게시글 CSV",
-                filtered.to_csv(index=False, encoding="utf-8-sig"),
+            st.download_button("📥 게시글 CSV", filtered.to_csv(index=False, encoding="utf-8-sig"),
                 file_name=f"게시글_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
 
     with tab3:
         st.markdown('<div class="tip-box">💡 아래 내용을 전체 복사해서 <strong>Claude.ai 채팅창</strong>에 붙여넣으면 바로 분석해드려요!</div>', unsafe_allow_html=True)
-        prompt = build_claude_prompt(keywords, stats, all_posts)
+        prompt = build_prompt(keywords, stats, all_posts)
         st.text_area("Claude 분석 프롬프트", value=prompt, height=420, label_visibility="collapsed")
         st.caption("텍스트박스 클릭 → Ctrl+A (전체선택) → Ctrl+C (복사)")
 
