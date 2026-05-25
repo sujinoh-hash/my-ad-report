@@ -368,27 +368,32 @@ if run_btn and keyword_input.strip():
 
     with tab2:
         # 매체 필터
-        available = ["블로그", "카페"]
-        if yt_videos:
-            available.append("유튜브")
+        # 체크박스 매체 필터 (스크롤 위치 유지)
+        st.markdown("**📌 매체 선택**")
+        check_cols = st.columns(4)
+        with check_cols[0]:
+            show_blog = st.checkbox("블로그", value=True)
+        with check_cols[1]:
+            show_cafe = st.checkbox("카페", value=True)
+        with check_cols[2]:
+            show_yt = st.checkbox("유튜브", value=True) if yt_videos else False
 
-        source_filter = st.multiselect(
-            "📌 매체 선택",
-            available,
-            default=available,
-            help="선택한 매체의 콘텐츠와 키워드 TOP 30이 함께 바뀌어요"
-        )
+        source_filter = []
+        if show_blog: source_filter.append("블로그")
+        if show_cafe: source_filter.append("카페")
+        if show_yt:   source_filter.append("유튜브")
 
         # 선택된 매체 데이터 필터링
         filtered_items = [i for i in all_items if i["type"] in source_filter]
 
         # 카운트 표시
-        count_cols = st.columns(len(available))
         type_colors = {"블로그": "badge-blog", "카페": "badge-cafe", "유튜브": "badge-yt"}
-        for i, src in enumerate(available):
+        count_html = ""
+        for src in ["블로그", "카페", "유튜브"]:
             cnt = len([x for x in all_items if x["type"] == src])
-            selected = "✅" if src in source_filter else "○"
-            count_cols[i].markdown(f'<span class="{type_colors.get(src,"")}">  {selected} {src} {cnt}건</span>', unsafe_allow_html=True)
+            if cnt > 0:
+                count_html += f'<span class="{type_colors.get(src,"")}"> {src} {cnt}건</span>&nbsp;'
+        st.markdown(count_html, unsafe_allow_html=True)
 
         st.markdown("")
 
