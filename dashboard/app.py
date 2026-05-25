@@ -330,7 +330,7 @@ if run_btn and keyword_input.strip():
 
     st.success(f"✅ 수집 완료! 키워드 {len(stats)}개 / 블로그·카페 {len(all_blog_cafe)}건 / 유튜브 {len(yt_videos)}건 / 댓글 {len(yt_comments)}건")
 
-    tab1, tab2, tab3 = st.tabs(["📈 검색량", "📋 콘텐츠 통합", "🤖 Claude 분석용 복사"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📈 검색량", "📝 블로그/카페", "▶️ 유튜브", "🤖 Claude 분석용 복사"])
 
     with tab1:
         if not stats:
