@@ -367,88 +367,91 @@ if run_btn and keyword_input.strip():
                 file_name=f"검색량_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
 
     with tab2:
-        # 매체 필터
-        # 체크박스 매체 필터 (스크롤 위치 유지)
-        st.markdown("**📌 매체 선택**")
-        check_cols = st.columns(4)
-        with check_cols[0]:
-            show_blog = st.checkbox("블로그", value=True)
-        with check_cols[1]:
-            show_cafe = st.checkbox("카페", value=True)
-        with check_cols[2]:
-            show_yt = st.checkbox("유튜브", value=True) if yt_videos else False
-
-        source_filter = []
-        if show_blog: source_filter.append("블로그")
-        if show_cafe: source_filter.append("카페")
-        if show_yt:   source_filter.append("유튜브")
-
-        # 선택된 매체 데이터 필터링
-        filtered_items = [i for i in all_items if i["type"] in source_filter]
-
-        # 카운트 표시
-        type_colors = {"블로그": "badge-blog", "카페": "badge-cafe", "유튜브": "badge-yt"}
-        count_html = ""
-        for src in ["블로그", "카페", "유튜브"]:
-            cnt = len([x for x in all_items if x["type"] == src])
-            if cnt > 0:
-                count_html += f'<span class="{type_colors.get(src,"")}"> {src} {cnt}건</span>&nbsp;'
-        st.markdown(count_html, unsafe_allow_html=True)
-
-        st.markdown("")
-
-        # 콘텐츠 테이블
-        if not filtered_items:
-            st.info("선택한 매체의 데이터가 없습니다.")
+        st.caption(f"출처: 네이버 Open API · 최신순 · {date_from} ~ {date_to} · {len(all_blog_cafe)}건")
+        source_filter = st.multiselect("출처 필터", ["블로그","카페"], default=["블로그","카페"])
+        df_posts = pd.DataFrame(all_blog_cafe) if all_blog_cafe else pd.DataFrame()
+        if df_posts.empty:
+            st.info("수집된 게시글이 없습니다.")
         else:
-            display_items = []
-            for item in filtered_items:
-                if item["type"] == "유튜브":
-                    display_items.append({
-                        "매체": item["type"],
-                        "제목": f"[{item['title']}]({item['link']})" if item.get("link") else item["title"],
-                        "내용": item.get("description",""),
-                        "날짜": item.get("date",""),
-                    })
-                else:
-                    display_items.append({
-                        "매체": item["type"],
-                        "제목": item.get("title",""),
-                        "내용": item.get("description",""),
-                        "날짜": item.get("date",""),
-                    })
+            filtered = df_posts[df_posts["type"].isin(source_filter)]
+            st.dataframe(
+                filtered[["type","title","description","date"]].rename(
+                    columns={"type":"출처","title":"제목","description":"내용","date":"날짜"}
+                ), hide_index=True, use_container_width=True, height=380
+            )
+            st.download_button("📥 게시글 CSV", filtered.to_csv(index=False, encoding="utf-8-sig"),
+                file_name=f"게시글_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
 
-            df_items = pd.DataFrame(display_items)
-            st.dataframe(df_items, hide_index=True, use_container_width=True, height=380)
-            st.download_button("📥 콘텐츠 CSV",
-                pd.DataFrame(filtered_items).to_csv(index=False, encoding="utf-8-sig"),
-                file_name=f"콘텐츠_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
-
-        # 키워드 TOP 30 — 선택 매체 기준
-        st.divider()
-        st.markdown(f"#### 📌 자주 등장한 키워드 TOP 30")
-        st.caption(f"선택 매체 기준: {' + '.join(source_filter) if source_filter else '없음'}")
-
-        top_kws = extract_top_keywords(filtered_items, top_n=30)
-
-        if top_kws:
-            max_count = top_kws[0][1]
+        top_kws_blog = extract_top_keywords(all_blog_cafe, top_n=30)
+        if top_kws_blog:
+            st.divider()
+            st.markdown("#### 📌 자주 등장한 키워드 TOP 30")
+            st.caption("블로그/카페 게시글 기준")
+            max_count = top_kws_blog[0][1]
             chips_html = ""
-            for word, count in top_kws:
+            for word, count in top_kws_blog:
                 ratio = count / max_count
                 cls = "freq-high" if ratio >= 0.6 else "freq-mid" if ratio >= 0.3 else "freq-low"
                 chips_html += f'<span class="{cls}">{word} <strong>{count}</strong></span>'
             st.markdown(chips_html, unsafe_allow_html=True)
-            st.markdown("")
-            df_freq = pd.DataFrame(top_kws[:20], columns=["키워드","등장 횟수"])
+            df_freq = pd.DataFrame(top_kws_blog[:20], columns=["키워드","등장 횟수"])
             fig2 = px.bar(df_freq, x="키워드", y="등장 횟수",
                           color="등장 횟수", color_continuous_scale="Blues", height=300)
             fig2.update_layout(coloraxis_showscale=False)
             st.plotly_chart(fig2, use_container_width=True)
-        else:
-            st.info("키워드 데이터가 없습니다.")
 
     with tab3:
+        if not has_youtube:
+            st.info("YOUTUBE_API_KEY를 Streamlit Secrets에 추가하면 유튜브 데이터를 수집할 수 있어요.")
+            st.code('YOUTUBE_API_KEY = "your_key"')
+        elif not yt_videos:
+            st.info("수집된 유튜브 영상이 없습니다.")
+        else:
+            st.caption(f"출처: YouTube Data API v3 · 조회수 순 · {date_from} ~ {date_to} · {len(yt_videos)}건")
+            col_v, col_c = st.columns([1.2, 1])
+            with col_v:
+                st.markdown("**📹 영상 목록**")
+                for v in yt_videos:
+                    url = f"https://www.youtube.com/watch?v={v['video_id']}"
+                    st.markdown(
+                        f"**[{v['title']}]({url})**  \n"
+                        f"📺 {v['channel']} · 📅 {v['date']}  \n"
+                        f"<small style='color:#888'>{v['description']}</small>",
+                        unsafe_allow_html=True
+                    )
+                    st.markdown("---")
+            with col_c:
+                st.markdown("**💬 인기 댓글**")
+                if yt_comments:
+                    for c in yt_comments[:20]:
+                        st.markdown(
+                            f"<small style='color:#333'>{c['description']}</small>  \n"
+                            f"<small style='color:#aaa'>👍 {c.get('likes',0)} · {c['date']}</small>",
+                            unsafe_allow_html=True
+                        )
+                        st.markdown("---")
+                else:
+                    st.info("댓글 데이터가 없습니다.")
+
+            top_kws_yt = extract_top_keywords(yt_videos + yt_comments, top_n=30)
+            if top_kws_yt:
+                st.divider()
+                st.markdown("#### 📌 자주 등장한 키워드 TOP 30")
+                st.caption("유튜브 영상 + 댓글 기준")
+                max_count = top_kws_yt[0][1]
+                chips_html = ""
+                for word, count in top_kws_yt:
+                    ratio = count / max_count
+                    cls = "freq-high" if ratio >= 0.6 else "freq-mid" if ratio >= 0.3 else "freq-low"
+                    chips_html += f'<span class="{cls}">{word} <strong>{count}</strong></span>'
+                st.markdown(chips_html, unsafe_allow_html=True)
+                df_freq2 = pd.DataFrame(top_kws_yt[:20], columns=["키워드","등장 횟수"])
+                fig3 = px.bar(df_freq2, x="키워드", y="등장 횟수",
+                              color="등장 횟수", color_continuous_scale="Reds", height=300)
+                fig3.update_layout(coloraxis_showscale=False)
+                st.plotly_chart(fig3, use_container_width=True)
+
+    with tab4:
         top_kws_all = extract_top_keywords(all_items, top_n=30)
         st.markdown('<div class="tip-box">💡 아래 내용을 전체 복사해서 <strong>Claude.ai 채팅창</strong>에 붙여넣으면 1~6번 분석 결과를 바로 받을 수 있어요!</div>', unsafe_allow_html=True)
         prompt = build_prompt(keywords, stats, all_items, top_kws_all)
