@@ -20,15 +20,30 @@ CAMPAIGN_KEY_MAP = {
 }
 
 def normalize_campaign_key(key: str) -> str:
+    """
+    {season}-{year}-alwayson → na-{year}-alwayson
+    {prefix}-casualdbe / {prefix}-casualigc → {prefix}-casual
+    나머지는 CAMPAIGN_KEY_MAP 참조, 없으면 그대로
+    """
     if not key:
         return key
-    m = re.match(r"^(spring|winter|summer|fall)-(\d{4})-alwayson$", key)
+    k = key.lower()
+    # {시즌}-alwayson 패턴
+    m = re.match(r"^(spring|winter|summer|fall)-(\d{4})-alwayson$", k)
     if m:
         return f"na-{m.group(2)}-alwayson"
-    return CAMPAIGN_KEY_MAP.get(key, key)
+    # casualdbe / casualigc → casual
+    k2 = re.sub(r"(casual)(dbe|igc)$", r"\1", k)
+    if k2 != k:
+        return k2
+    return CAMPAIGN_KEY_MAP.get(k, k)
 
 
 def get_funnel(seg7: str, naver: bool = False) -> str:
+    """
+    [7]번 세그먼트에서 prospecting/retargeting 판별
+    네이버는 글자수 제한으로 pro/re 사용
+    """
     is_ret = seg7.startswith("retargeting")
     if naver:
         return "re" if is_ret else "pro"
@@ -47,29 +62,29 @@ def build_campaign_key_v21(cid: str) -> str:
     parts = raw.split("_")
     prefix = parts[0].lower()
 
-    # ── 제거 대상 (행 자체를 없애야 하므로 "DELETE" 반환) ────────
-    if "_br_"  in low:                                              return "DELETE"  # 규칙4
-    if ".com"  in low:                                              return "DELETE"  # 규칙5
-    if re.search(r"\.(instagram|youtube|facebook)", low):           return "DELETE"
-    if "global-all-size-guide" in low:                              return "DELETE"  # 규칙6
     # ── Unknown 필터 ──────────────────────────────────────────
-    if "_adef-" in low:                                             return "Unknown"
-    # 규칙2: ps_daum_daily_brandzone / ps_daum_campaign_brandzone → Unknown
-    if prefix == "ps" and "daum" in low and re.search(r"daum_(daily|campaign)_brandzone", low):
-        return "Unknown"
-    # 규칙3: ps_google pmax → Unknown
-    if "pmax" in low and prefix == "ps":                            return "Unknown"
+    if "_adef-" in low:                                  return "Unknown"  # 구버전 코드
+    if "_br_" in low:                                    return "Unknown"  # 브랜딩 캠페인
+    if re.search(r"\.(com|instagram|youtube|facebook)", low): return "Unknown"  # 도메인
 
+    # ── sms_ : SMS 옵트인 ─────────────────────────────────────
     if prefix == "sms":
         return "dm-smsoptin-smspn-alwayson-na-na"
 
+    # ── pu_ : 카카오 트랜잭셔널 ──────────────────────────────
     if prefix == "pu":
         return "dm-kakaooptin-kakaotransactional-alwayson-na-na"
 
+    # ── smp_ ──────────────────────────────────────────────────
     if prefix == "smp":
         medium = parts[1].lower() if len(parts) > 1 else ""
-        if medium == "ig": return "Unknown"
-        if "wc10" in low: return "dm-kakaooptin-kakaotransactional-alwayson-na-na"
+
+        if medium == "ig":
+            return "Unknown"  # 구버전
+
+        if "wc10" in low:
+            return "dm-kakaooptin-kakaotransactional-alwayson-na-na"
+
         if medium == "kakao":
             seg6 = parts[6].lower() if len(parts) > 6 else ""
             if seg6 in ["tx", "all"] and "transactional" in low:
@@ -79,18 +94,25 @@ def build_campaign_key_v21(cid: str) -> str:
                 c_key = normalize_campaign_key(parts[8]) if len(parts) > 8 else "alwayson-na-na"
                 return f"dm-kakaooptin-kakaopn-{c_key}"
             return "Unknown"
+
         if medium in ["fbig", "meta"]:
             seg7 = parts[7].lower() if len(parts) > 7 else ""
             funnel = get_funnel(seg7)
             c_key = normalize_campaign_key(parts[8]) if len(parts) > 8 else "alwayson-na-na"
             fmt = "catalog" if "catalog" in low else "fbig"
             return f"dm-{funnel}-{fmt}-{c_key}"
+
         return "Unknown"
 
+    # ── ps_ ───────────────────────────────────────────────────
     if prefix == "ps":
         medium = parts[1].lower() if len(parts) > 1 else ""
+
+        # 네이버쇼핑
         if "navershopping" in medium:
             return "dm-pro-shopping-alwayson-n-n"
+
+        # 네이버/카카오(다음) 브랜드검색 → 캠페인키 alwayson-n-n 고정
         if "naver-brandzone" in medium or "daum-brandzone" in medium:
             seg7 = parts[7].lower() if len(parts) > 7 else ""
             if not (seg7.startswith("prospecting") or seg7.startswith("retargeting")):
@@ -101,12 +123,15 @@ def build_campaign_key_v21(cid: str) -> str:
             else:
                 device = "naverbsmo" if device_seg.startswith("mo") else "naverbspc"
             return f"dm-pro-{device}-alwayson-n-n"
+
+        # 네이버 SA / 다음 SA
         if medium in ["naver", "daum"] or (
             medium.startswith("naver") and "shopping" not in medium and "brandzone" not in medium
         ):
             seg7 = parts[7].lower() if len(parts) > 7 else ""
             if not (seg7.startswith("prospecting") or seg7.startswith("retargeting")):
                 return "Unknown"
+            # 다음(카카오) SA는 prospecting/retargeting 그대로, 네이버만 pro/re 축약
             if medium == "daum":
                 funnel = get_funnel(seg7)
                 device_seg = parts[9].lower() if len(parts) > 9 else ""
@@ -121,6 +146,8 @@ def build_campaign_key_v21(cid: str) -> str:
             elif "keyword-product"  in seg7: cat = "product"
             else:                            cat = "brand"
             return f"dm-{funnel}-{device}-{cat}-na-na"
+
+        # 구글 SA
         if medium == "google":
             seg7 = parts[7].lower() if len(parts) > 7 else ""
             if not (seg7.startswith("prospecting") or seg7.startswith("retargeting")):
@@ -132,8 +159,10 @@ def build_campaign_key_v21(cid: str) -> str:
             elif "keyword-product"  in seg7: cat = "product"
             else:                            cat = "brand"
             return f"dm-{funnel}-googlepcmo-{cat}-na-na"
+
         return "Unknown"
 
+    # ── dsp_ ──────────────────────────────────────────────────
     if prefix == "dsp":
         medium  = parts[1].lower() if len(parts) > 1 else ""
         seg7    = parts[7].lower() if len(parts) > 7 else ""
@@ -141,45 +170,66 @@ def build_campaign_key_v21(cid: str) -> str:
         c_key   = normalize_campaign_key(raw_key)
         dev_seg = parts[9].lower() if len(parts) > 9 else ""
 
+        # DA 캠페인키 유효성 검사 (카탈로그 제외한 DA 매체는 캠페인키가 반드시 3파트)
         def is_valid_da_key(key: str) -> bool:
             return len(key.split("-")) >= 3
 
+        # 구글 PMAX
         if medium == "google":
             if not seg7.startswith("prospecting"): return "Unknown"
             if   "demo-women" in seg7: pmax = "PmaxW"
             elif "demo-men"   in seg7: pmax = "PmaxM"
             else:                      pmax = "PmaxC"
             return f"dm-prospecting-{pmax}-alwayson-na-na"
+
+        # 유튜브
         if medium == "yt":
             return f"dm-{get_funnel(seg7)}-Youtube-alwayson-na-na"
+
+        # 크리테오
         if medium == "criteo":
             return f"dm-{get_funnel(seg7)}-criteo-alwayson-na-na"
+
+        # 카카오 키워드 광고 (kakao-kw) → 캠페인키 alwayson-na-na 고정
         if medium == "kakao-kw":
-            # 규칙1: brand-alwayson-na-na → alwayson-na-na
-            return f"dm-{get_funnel(seg7)}-kakaokw-alwayson-na-na"
+            return f"dm-{get_funnel(seg7)}-kakaokw-brand-alwayson-na-na"
+
+        # 네이버 GFA / gfacatalog
         if medium == "naver":
-            funnel = get_funnel(seg7)
-            if "catalog" in low: return f"dm-{funnel}-gfacatalog-alwayson-na-na"
+            funnel = get_funnel(seg7)  # 1번: GFA는 prospecting/retargeting 그대로
+            if "catalog" in low:
+                return f"dm-{funnel}-gfacatalog-alwayson-na-na"
             if not is_valid_da_key(c_key): return "Unknown"
             return f"dm-{funnel}-GFA-{c_key}"
+
+        # 카카오 DA
         if medium == "kakao":
             funnel = get_funnel(seg7)
-            if "catalog" in low: return f"dm-{funnel}-kakaocatalog-alwayson-na-na"
+            if "catalog" in low:
+                return f"dm-{funnel}-kakaocatalog-alwayson-na-na"
             if not is_valid_da_key(c_key): return "Unknown"
             if dev_seg.startswith("mo-"): fmt = "bizboard"
             else:                         fmt = "display"
             return f"dm-{funnel}-{fmt}-{c_key}"
+
+        # 메타 DA
         if medium in ["fbig", "meta"]:
             funnel = get_funnel(seg7)
-            if "catalog" in low: return f"dm-{funnel}-fbigcatalog-alwayson-na-na"
+            if "catalog" in low:
+                return f"dm-{funnel}-fbigcatalog-{c_key}"
             if not is_valid_da_key(c_key): return "Unknown"
             return f"dm-{funnel}-fbig-{c_key}"
+
+        # 크림 DA
         if medium == "kream":
             funnel = get_funnel(seg7)
             if not is_valid_da_key(c_key): return "Unknown"
             return f"dm-{funnel}-Kream-{c_key}"
+
+        # 페이코
         if medium == "payco":
             return "dm-prospecting-payco-alwayson-na-na"
+
         return "Unknown"
 
     return "Unknown"
@@ -202,271 +252,10 @@ def get_date_final(content, filename):
 
 
 # ────────────────────────────────────────────────────────────
-# GA4 캠페인명 변환
-# ────────────────────────────────────────────────────────────
-def build_campaign_key_ga4(cid: str, search_term: str = "", ad_content: str = "") -> str:
-    if pd.isna(cid) or str(cid).strip() == "":
-        return "Unknown"
-
-    raw = str(cid).strip()
-    low = raw.lower()
-    parts = raw.split("_")
-    prefix = parts[0].lower()
-    st_low = str(search_term).lower() if search_term and str(search_term) != "nan" else ""
-    ac_low = str(ad_content).lower() if ad_content and str(ad_content) != "nan" else ""
-
-    if raw.startswith("dm-"):
-        return raw
-    # ── 제거 대상 ─────────────────────────────────────────────
-    if "_br_"  in low:                                              return "DELETE"  # 규칙4
-    if ".com"  in low:                                              return "DELETE"  # 규칙5
-    if re.search(r"\.(instagram|youtube|facebook)", low):           return "DELETE"
-    if "global-all-size-guide" in low:                              return "DELETE"  # 규칙6
-    # ── Unknown 필터 ──────────────────────────────────────────
-    if "_adef-" in low:                                             return "Unknown"
-    if raw in ["(not set)", "(organic)", "(referral)", "(direct)"]: return "Unknown"
-    # 규칙2: ps_daum_daily_brandzone / ps_daum_campaign_brandzone → Unknown
-    if prefix == "ps" and "daum" in low and re.search(r"daum_(daily|campaign)_brandzone", low):
-        return "Unknown"
-    # 규칙3: ps_google pmax → Unknown
-    if "pmax" in low and prefix == "ps":                            return "Unknown"
-
-    if prefix == "sms":
-        return "dm-smsoptin-smspn-alwayson-na-na"
-    if prefix == "pu":
-        return "dm-kakaooptin-kakaotransactional-alwayson-na-na"
-
-    if prefix == "smp":
-        medium = parts[1].lower() if len(parts) > 1 else ""
-        if medium == "ig": return "Unknown"
-        if "wc10" in low: return "dm-kakaooptin-kakaotransactional-alwayson-na-na"
-        seg6 = parts[6].lower() if len(parts) > 6 else ""
-        if medium == "kakao":
-            if "kakao-opt-in" in seg6 or "welcomemessage" in low:
-                c_key = normalize_campaign_key(parts[8]) if len(parts) > 8 else "alwayson-na-na"
-                return f"dm-kakaooptin-kakaopn-{c_key}"
-            return "Unknown"
-        if medium in ["fbig", "meta"]:
-            funnel = get_funnel(seg6)
-            raw_key = parts[8] if len(parts) > 8 else ""
-            c_key = normalize_campaign_key(raw_key)
-            if "fbigcatalog" in st_low or "catalog" in st_low:
-                return f"dm-{funnel}-fbigcatalog-alwayson-na-na"
-            if len(c_key.split("-")) < 3: return "Unknown"
-            return f"dm-{funnel}-fbig-{c_key}"
-        return "Unknown"
-
-    if prefix == "ps":
-        medium = parts[1].lower() if len(parts) > 1 else ""
-        if len(parts) < 9: return "Unknown"
-        seg6 = parts[6].lower() if len(parts) > 6 else ""
-        if "navershopping" in medium:
-            return "dm-pro-shopping-alwayson-n-n"
-        if "naver-brandzone" in medium or "daum-brandzone" in medium:
-            if not (seg6.startswith("prospecting") or seg6.startswith("retargeting")):
-                return "Unknown"
-            if "daum" in medium:
-                device = "kakaobsmo" if ac_low.startswith("mo-") else "kakaobspc"
-            else:
-                device = "naverbsmo" if ac_low.startswith("mo-") else "naverbspc"
-            return f"dm-pro-{device}-alwayson-n-n"
-        if medium in ["naver", "daum"] or (
-            medium.startswith("naver") and "shopping" not in medium and "brandzone" not in medium
-        ):
-            if not (seg6.startswith("prospecting") or seg6.startswith("retargeting")):
-                return "Unknown"
-            if medium == "daum":
-                funnel = get_funnel(seg6)
-                device = "kakaomo" if ac_low.startswith("mo-") else "kakaopc"
-            else:
-                funnel = get_funnel(seg6, naver=True)
-                device = "navermo" if ac_low.startswith("mo-") else "naverpc"
-            if   "keyword-generic"  in seg6: cat = "generic"
-            elif "keyword-activity" in seg6: cat = "Activity"
-            elif "keyword-brand"    in seg6: cat = "brand"
-            elif "keyword-product"  in seg6: cat = "product"
-            else:                            cat = "brand"
-            return f"dm-{funnel}-{device}-{cat}-na-na"
-        if medium == "google":
-            funnel = get_funnel(seg6)
-            if   "keyword-generic"  in seg6: cat = "generic"
-            elif "keyword-activity" in seg6: cat = "Activity"
-            elif "keyword-brand"    in seg6: cat = "brand"
-            elif "keyword-product"  in seg6: cat = "product"
-            else:                            cat = "brand"
-            return f"dm-{funnel}-googlepcmo-{cat}-na-na"
-        return "Unknown"
-
-    if prefix == "dsp":
-        medium  = parts[1].lower() if len(parts) > 1 else ""
-        seg6    = parts[6].lower() if len(parts) > 6 else ""
-        raw_key = parts[8] if len(parts) > 8 else ""
-        c_key   = normalize_campaign_key(raw_key)
-
-        def is_valid_da_key(key): return len(key.split("-")) >= 3
-
-        if medium == "google":
-            if   "pmaxw" in st_low: pmax = "PmaxW"
-            elif "pmaxm" in st_low: pmax = "PmaxM"
-            else:                   pmax = "PmaxC"
-            return f"dm-prospecting-{pmax}-alwayson-na-na"
-        if medium == "yt":
-            return f"dm-{get_funnel(seg6)}-Youtube-alwayson-na-na"
-        if medium == "criteo":
-            return f"dm-{get_funnel(seg6)}-criteo-alwayson-na-na"
-        if medium == "kakao-kw":
-            # 규칙1: brand-alwayson-na-na → alwayson-na-na
-            return f"dm-{get_funnel(seg6)}-kakaokw-alwayson-na-na"
-        if medium == "naver":
-            funnel = get_funnel(seg6)
-            if "catalog" in low: return f"dm-{funnel}-gfacatalog-alwayson-na-na"
-            if not is_valid_da_key(c_key): return "Unknown"
-            return f"dm-{funnel}-GFA-{c_key}"
-        if medium == "kakao":
-            funnel = get_funnel(seg6)
-            if "kakaocatalog" in st_low or "catalog" in st_low:
-                return f"dm-{funnel}-kakaocatalog-alwayson-na-na"
-            if not is_valid_da_key(c_key): return "Unknown"
-            fmt = "bizboard" if "kakaobiz" in st_low else "display"
-            return f"dm-{funnel}-{fmt}-{c_key}"
-        if medium in ["fbig", "meta"]:
-            funnel = get_funnel(seg6)
-            if "catalog" in low: return f"dm-{funnel}-fbigcatalog-alwayson-na-na"
-            if not is_valid_da_key(c_key): return "Unknown"
-            return f"dm-{funnel}-fbig-{c_key}"
-        if medium == "kream":
-            funnel = get_funnel(seg6)
-            if not is_valid_da_key(c_key): return "Unknown"
-            return f"dm-{funnel}-Kream-{c_key}"
-        if medium == "payco":
-            return "dm-prospecting-payco-alwayson-na-na"
-        return "Unknown"
-
-    return "Unknown"
-
-
-# ────────────────────────────────────────────────────────────
-# GA4 TSV 파싱 (헤더 자동 감지)
-# ────────────────────────────────────────────────────────────
-COLUMN_MAP_TSV = {
-    "날짜": "날짜", "date": "날짜",
-    "세션 소스": "세션소스", "세션소스": "세션소스", "session source": "세션소스",
-    "세션 캠페인": "세션캠페인", "세션캠페인": "세션캠페인", "session campaign": "세션캠페인", "campaign": "세션캠페인",
-    "세션 광고 콘텐츠": "세션광고콘텐츠", "세션광고콘텐츠": "세션광고콘텐츠", "세션 수동 광고 콘텐츠": "세션광고콘텐츠",
-    "세션 검색어": "세션검색어", "세션검색어": "세션검색어",
-    "방문수": "방문수", "users": "방문수", "총 사용자": "방문수",
-    "참여 세션수": "참여세션수", "참여세션수": "참여세션수", "engaged sessions": "참여세션수",
-    "세션수": "세션수", "세션": "세션수", "sessions": "세션수",
-    "장바구니에 추가": "장바구니", "장바구니": "장바구니", "add to carts": "장바구니",
-    "구매": "구매", "purchases": "구매", "transactions": "구매",
-    "총 수익": "총수익", "총수익": "총수익", "revenue": "총수익", "total revenue": "총수익", "구매 수익": "총수익",
-}
-
-def parse_ga4_tsv(raw_bytes: bytes) -> pd.DataFrame:
-    """TSV 바이트 → 정규화된 DataFrame"""
-    for enc in ["utf-8-sig", "utf-8", "utf-16", "euc-kr"]:
-        try:
-            text = raw_bytes.decode(enc)
-            break
-        except Exception:
-            continue
-    else:
-        raise ValueError("파일 인코딩을 읽을 수 없어요.")
-
-    lines = text.splitlines(keepends=True)
-
-    # 헤더 행 찾기 (# 주석·빈 행 건너뜀)
-    header_row = None
-    summary_row = None
-    segment_row = None  # 세그먼트 그룹 행 (방문수, 세션수 등의 소속 세그먼트 표시)
-    for i, line in enumerate(lines):
-        if line.startswith("#") or line.strip() == "":
-            continue
-        cols = [c.strip() for c in line.split("\t")]
-        joined = " ".join(cols)
-        # 세그먼트 그룹 행: 첫 컬럼 비어있고 세그먼트/총계 키워드 포함
-        if cols[0] == "" and any(k in joined for k in ["세그먼트", "총계", "Segment", "Total", "유료"]):
-            segment_row = i
-            continue
-        if any(k in joined for k in ["날짜", "세션", "Date", "Session", "Campaign"]):
-            header_row = i
-            if i + 1 < len(lines) and lines[i + 1].split("\t")[0].strip() == "":
-                summary_row = i + 1
-            break
-
-    if header_row is None:
-        raise ValueError("헤더 행을 찾을 수 없어요.")
-
-    # 헤더 컬럼명 구성 (세그먼트 그룹 행 있으면 이름 붙이기)
-    DIMENSION_COLS = {"세션 매체", "세션 소스", "세션 캠페인", "세션 수동 광고 콘텐츠",
-                      "세션 수동 검색어", "날짜", "세션광고콘텐츠", "세션검색어"}
-
-    header_cols = [c.strip() for c in lines[header_row].strip().split("\t")]
-    if segment_row is not None:
-        seg_raw = [c.strip() for c in lines[segment_row].strip().split("\t")]
-        seg_raw += [""] * (len(header_cols) - len(seg_raw))
-        # forward-fill (빈 칸은 앞 세그먼트명으로 채움, "세그먼트" 자체는 무시)
-        seg_filled, current_seg = [], ""
-        for s in seg_raw:
-            if s and s != "세그먼트":
-                current_seg = s
-            seg_filled.append(current_seg)
-        # 컬럼명 생성 (차원 컬럼 제외, 중복 시 .1 .2 suffix)
-        seen_count = {}
-        final_cols = []
-        for col, seg in zip(header_cols, seg_filled):
-            if col in DIMENSION_COLS or not seg:
-                final_cols.append(col)
-            else:
-                key = f"{col} ({seg})"
-                cnt = seen_count.get(key, 0)
-                seen_count[key] = cnt + 1
-                final_cols.append(key if cnt == 0 else f"{key}.{cnt}")
-        header_cols = final_cols
-
-    data_lines = [line for i, line in enumerate(lines)
-                  if i > header_row and i != summary_row]
-
-    df = pd.read_csv(io.StringIO("".join(data_lines)), sep="\t", header=None, names=header_cols)
-
-    # 하단 합계 행 제거
-    first_col = df.columns[0]
-    df = df[~df[first_col].astype(str).str.contains(r"합계|총계|Total|Grand Total", na=False)]
-    df.dropna(how="all", inplace=True)
-    df.reset_index(drop=True, inplace=True)
-
-    # 컬럼명 정규화
-    ren = {}
-    for col in df.columns:
-        key = col.strip().lower()
-        for pattern, mapped in COLUMN_MAP_TSV.items():
-            if key == pattern.lower():
-                ren[col] = mapped
-                break
-    df.rename(columns=ren, inplace=True)
-
-    # 숫자 변환
-    for col in ["방문수", "참여세션수", "세션수", "장바구니", "구매", "총수익"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(
-                df[col].astype(str).str.replace(",", "").str.replace("₩", "").str.strip(),
-                errors="coerce"
-            ).fillna(0)
-
-    return df
-
-
-# ────────────────────────────────────────────────────────────
 # UI
 # ────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4 = st.tabs([
-    "🎯 1단계: 어도비 검수",
-    "📊 2단계: 매체 Raw 정제",
-    "📈 3단계: GA4 검수",
-    "🔄 4단계: GA4 TSV → Excel 변환",
-])
+tab1, tab2, tab3 = st.tabs(["🎯 1단계: 어도비 검수", "📊 2단계: 매체 Raw 정제", "📈 3단계: GA4 검수"])
 
-# ────────────────────────────────────────────────────────────
 with tab1:
     st.header("어도비 통합 검수 [v21]")
     files = st.file_uploader(
@@ -491,7 +280,6 @@ with tab1:
 
         full_adobe = pd.concat(all_dfs, ignore_index=True)
         full_adobe["AI_제안명"] = full_adobe["코드"].apply(build_campaign_key_v21)
-        full_adobe = full_adobe[full_adobe["AI_제안명"] != "DELETE"].reset_index(drop=True)
 
         total = len(full_adobe)
         unk = (full_adobe["AI_제안명"] == "Unknown").sum()
@@ -512,7 +300,6 @@ with tab1:
             "adobe_checked_v21.csv",
         )
 
-# ────────────────────────────────────────────────────────────
 with tab2:
     st.header("📊 매체 Raw 데이터 정제")
     media_ins = st.file_uploader(
@@ -528,23 +315,32 @@ with tab2:
             fname = mf.name
             fname_low = fname.lower()
             df_m = None
-            raw = mf.read()
 
+            # ── 파일 읽기 ──────────────────────────────────────
             if fname.endswith("xlsx"):
-                df_m = pd.read_excel(io.BytesIO(raw))
+                df_m = pd.read_excel(mf)
+
+            # 카카오DA 보고서 (utf-16 탭구분)
             elif "보고서" in fname and "메시지" not in fname:
                 try:
+                    raw = mf.read()
                     df_m = pd.read_csv(io.StringIO(raw.decode("utf-16")), sep="\t")
                 except Exception:
                     st.error(f"❌ {fname} 파일을 읽을 수 없어요.")
                     continue
+
+            # 쇼핑파트너 거래내역 (euc-kr)
             elif "거래내역" in fname:
                 try:
+                    raw = mf.read()
                     df_m = pd.read_csv(io.StringIO(raw.decode("euc-kr")))
                 except Exception:
                     st.error(f"❌ {fname} 파일을 읽을 수 없어요.")
                     continue
+
+            # 일반 CSV (인코딩 자동 감지)
             else:
+                raw = mf.read()
                 for enc in ["utf-8-sig", "utf-16", "euc-kr", "cp949", "utf-8"]:
                     try:
                         df_m = pd.read_csv(io.StringIO(raw.decode(enc)))
@@ -555,27 +351,39 @@ with tab2:
                     st.error(f"❌ {fname} 파일 인코딩을 읽을 수 없어요.")
                     continue
 
+            # ── 파일명 기반 특수 처리 (rename 전) ───────────────
+
+            # 카카오 브랜드검색 (total_report_mo / total_report_pc)
             if "total_report" in fname_low:
                 device = "kakaobsmo" if "_mo" in fname_low else "kakaobspc"
                 df_m.rename(columns={"기간": "일", "노출수": "노출", "클릭수": "클릭"}, inplace=True)
                 df_m["캠페인명"] = f"dm-pro-{device}-alwayson-n-n"
                 df_m["광고비"] = 0
+
+            # 카카오SA 애틀란티카 (시작일 → 일, 캠페인 → 캠페인명)
             elif "애틀라티카" in fname or "맞춤보고서" in fname_low:
+                raw2 = open(base + fname, 'rb').read() if False else raw  # 이미 읽음
                 df_m = pd.read_csv(io.StringIO(raw.decode("utf-8-sig")))
                 df_m.rename(columns={
                     "시작일": "일", "캠페인": "캠페인명",
                     "노출수": "노출", "클릭수": "클릭", "비용": "광고비",
                     "친구 추가수(7일)": "채널친구수"
                 }, inplace=True)
+
+            # 네이버SA (일별, 캠페인, 총비용 컬럼)
             elif "daily_report_adef" in fname_low and "보고서" not in fname:
                 df_m = pd.read_csv(io.StringIO(raw.decode("utf-8-sig")), header=1)
                 df_m.rename(columns={
                     "일별": "일", "캠페인": "캠페인명",
                     "노출수": "노출", "클릭수": "클릭", "총비용": "광고비"
                 }, inplace=True)
+
+            # 카카오DA 보고서
             elif "보고서" in fname and "메시지" not in fname:
                 df_m.rename(columns={"캠페인 이름": "캠페인명", "노출수": "노출", "클릭수": "클릭", "비용": "광고비"}, inplace=True)
-                df_m["캠페인명"] = "Unknown"
+                df_m["캠페인명"] = "Unknown"  # _br_ 포함된 캠페인명이므로 Unknown
+
+            # 쇼핑파트너 거래내역
             elif "거래내역" in fname:
                 df_m.rename(columns={"결제금액(유상+무상)": "광고비"}, inplace=True)
                 df_m["캠페인명"] = "쇼핑파트너센터"
@@ -583,9 +391,13 @@ with tab2:
                     lambda x: abs(float(str(x).replace(",", "").replace("-", "0"))) if pd.notna(x) else 0
                 )
                 df_m["노출"], df_m["클릭"] = 0, 0
+
+            # 메시지보고서 (카카오 트랜잭셔널)
             elif "메시지" in fname:
                 df_m.rename(columns={"비용": "광고비", "열람수": "노출", "클릭수": "클릭"}, inplace=True)
                 df_m["캠페인명"] = "dm-kakaooptin-kakaotransactional-alwayson-na-na"
+
+            # 일반 rename
             else:
                 ren = {
                     "일": "일", "Day": "일", "일자": "일", "일별": "일", "날짜": "일",
@@ -600,32 +412,39 @@ with tab2:
                     "디스플레이 수": "노출", "클릭 수": "클릭", "비용": "광고비",
                 }
                 df_m.rename(columns=ren, inplace=True)
+
+                # cpk
                 if "cpk" in fname_low:
                     df_m["캠페인명"] = "Kakao Offerwall"
 
+            # ── kakaopn 열람수 → 노출수 ──────────────────────────
             if "열람수" in df_m.columns and "캠페인명" in df_m.columns:
                 df_m.loc[df_m["캠페인명"].str.contains("kakaopn", na=False), "노출"] = df_m["열람수"]
 
+            # ── 수치 콤마 제거 및 숫자 변환 ──────────────────────
             for col in ["노출", "클릭", "광고비", "채널친구수"]:
                 if col in df_m.columns:
                     df_m[col] = pd.to_numeric(
                         df_m[col].astype(str).str.replace(",", "").str.strip(), errors="coerce"
                     ).fillna(0)
 
+            # ── 날짜 컬럼 통일 (YYYY-MM-DD) ──────────────────────
             date_col = "일" if "일" in df_m.columns else None
             if date_col:
                 df_m[date_col] = pd.to_datetime(
                     df_m[date_col].astype(str).str.strip()
-                    .str.replace(r"\.\s*", "-", regex=True)
+                    .str.replace(r"\.\s*", "-", regex=True)  # 2026. 04. 14. → 2026-04-14
                     .str.rstrip("-"),
                     errors="coerce"
                 ).dt.strftime("%Y-%m-%d")
                 df_m.rename(columns={date_col: "일"}, inplace=True)
 
+            # ── Total 행 제거 ─────────────────────────────────────
             if "일" in df_m.columns:
                 df_m = df_m[df_m["일"] != "Total"]
                 df_m = df_m[df_m["일"].notna()]
 
+            # ── 필요한 컬럼만 남기기 ──────────────────────────────
             keep_cols = ["일", "캠페인명", "노출", "클릭", "광고비", "채널친구수"]
             df_m = df_m[[c for c in keep_cols if c in df_m.columns]]
 
@@ -642,118 +461,269 @@ with tab2:
                 "media_cleaned.csv",
             )
 
+
+# ────────────────────────────────────────────────────────────
+# GA4 파싱 함수
+# ────────────────────────────────────────────────────────────
+def build_campaign_key_ga4(cid: str, search_term: str = "", ad_content: str = "") -> str:
+    """
+    GA4 트래킹코드 → 캠페인명 변환
+    - parts[6] = 타겟방식
+    - parts[7] = 세그먼트명
+    - parts[8] = 캠페인키
+    - SA 기기 구분: 세션광고콘텐츠(ad_content)에서 mo- 시작 여부
+    - DA 기기/포맷 구분: 세션검색어(search_term)
+    """
+    if pd.isna(cid) or str(cid).strip() == "":
+        return "Unknown"
+
+    raw = str(cid).strip()
+    low = raw.lower()
+    parts = raw.split("_")
+    prefix = parts[0].lower()
+    st_low = str(search_term).lower() if search_term and str(search_term) != "nan" else ""
+    ac_low = str(ad_content).lower() if ad_content and str(ad_content) != "nan" else ""
+
+    # 이미 변환된 캠페인명 → 그대로 통과
+    if raw.startswith("dm-"):
+        return raw
+
+    # Unknown 필터
+    if "_adef-" in low:  return "Unknown"
+    if "_br_"  in low:  return "Unknown"
+    if re.search(r"\.(com|instagram|youtube|facebook)", low): return "Unknown"
+    if raw in ["(not set)", "(organic)", "(referral)", "(direct)"]: return "Unknown"
+
+    # sms_
+    if prefix == "sms":
+        return "dm-smsoptin-smspn-alwayson-na-na"
+
+    # pu_
+    if prefix == "pu":
+        return "dm-kakaooptin-kakaotransactional-alwayson-na-na"
+
+    # smp_
+    if prefix == "smp":
+        medium = parts[1].lower() if len(parts) > 1 else ""
+        if medium == "ig": return "Unknown"
+        if "wc10" in low: return "dm-kakaooptin-kakaotransactional-alwayson-na-na"
+        seg6 = parts[6].lower() if len(parts) > 6 else ""
+        if medium == "kakao":
+            # GA4: [6]이 kakao-opt-in
+            if "kakao-opt-in" in seg6 or "welcomemessage" in low:
+                c_key = normalize_campaign_key(parts[8]) if len(parts) > 8 else "alwayson-na-na"
+                return f"dm-kakaooptin-kakaopn-{c_key}"
+            return "Unknown"
+        if medium in ["fbig", "meta"]:
+            funnel = get_funnel(seg6)
+            raw_key = parts[8] if len(parts) > 8 else ""
+            c_key = normalize_campaign_key(raw_key)
+            if "fbigcatalog" in st_low or "catalog" in st_low:
+                return f"dm-{funnel}-fbigcatalog-{c_key}"
+            if len(c_key.split("-")) < 3: return "Unknown"
+            return f"dm-{funnel}-fbig-{c_key}"
+        return "Unknown"
+
+    # ps_
+    if prefix == "ps":
+        medium = parts[1].lower() if len(parts) > 1 else ""
+        if len(parts) < 9: return "Unknown"
+        seg6 = parts[6].lower() if len(parts) > 6 else ""
+
+        if "navershopping" in medium:
+            return "dm-pro-shopping-alwayson-n-n"
+
+        if "naver-brandzone" in medium or "daum-brandzone" in medium:
+            if not (seg6.startswith("prospecting") or seg6.startswith("retargeting")):
+                return "Unknown"
+            if "daum" in medium:
+                device = "kakaobsmo" if ac_low.startswith("mo-") else "kakaobspc"
+            else:
+                device = "naverbsmo" if ac_low.startswith("mo-") else "naverbspc"
+            return f"dm-pro-{device}-alwayson-n-n"
+
+        if medium in ["naver", "daum"] or (
+            medium.startswith("naver") and "shopping" not in medium and "brandzone" not in medium
+        ):
+            if not (seg6.startswith("prospecting") or seg6.startswith("retargeting")):
+                return "Unknown"
+            if medium == "daum":
+                funnel = get_funnel(seg6)
+                device = "kakaomo" if ac_low.startswith("mo-") else "kakaopc"
+            else:
+                funnel = get_funnel(seg6, naver=True)
+                device = "navermo" if ac_low.startswith("mo-") else "naverpc"
+            if   "keyword-generic"  in seg6: cat = "generic"
+            elif "keyword-activity" in seg6: cat = "Activity"
+            elif "keyword-brand"    in seg6: cat = "brand"
+            elif "keyword-product"  in seg6: cat = "product"
+            else:                            cat = "brand"
+            return f"dm-{funnel}-{device}-{cat}-na-na"
+
+        if medium == "google":
+            funnel = get_funnel(seg6)
+            device_g = "mo" if ac_low.startswith("mo-") else "pc"
+            if   "keyword-generic"  in seg6: cat = "generic"
+            elif "keyword-activity" in seg6: cat = "Activity"
+            elif "keyword-brand"    in seg6: cat = "brand"
+            elif "keyword-product"  in seg6: cat = "product"
+            else:                            cat = "brand"
+            return f"dm-{funnel}-googlepcmo-{cat}-na-na"
+
+        return "Unknown"
+
+    # dsp_
+    if prefix == "dsp":
+        medium  = parts[1].lower() if len(parts) > 1 else ""
+        seg6    = parts[6].lower() if len(parts) > 6 else ""
+        raw_key = parts[8] if len(parts) > 8 else ""
+        c_key   = normalize_campaign_key(raw_key)
+
+        def is_valid_da_key(key): return len(key.split("-")) >= 3
+
+        if medium == "google":
+            if   "pmaxw" in st_low: pmax = "PmaxW"
+            elif "pmaxm" in st_low: pmax = "PmaxM"
+            else:                   pmax = "PmaxC"
+            return f"dm-prospecting-{pmax}-alwayson-na-na"
+
+        if medium == "yt":
+            return f"dm-{get_funnel(seg6)}-Youtube-alwayson-na-na"
+
+        if medium == "criteo":
+            return f"dm-{get_funnel(seg6)}-criteo-alwayson-na-na"
+
+        if medium == "kakao-kw":
+            return f"dm-{get_funnel(seg6)}-kakaokw-brand-alwayson-na-na"
+
+        if medium == "naver":
+            funnel = get_funnel(seg6)
+            if "catalog" in low: return f"dm-{funnel}-gfacatalog-alwayson-na-na"
+            if not is_valid_da_key(c_key): return "Unknown"
+            return f"dm-{funnel}-GFA-{c_key}"
+
+        if medium == "kakao":
+            funnel = get_funnel(seg6)
+            if "kakaocatalog" in st_low or "catalog" in st_low:
+                return f"dm-{funnel}-kakaocatalog-alwayson-na-na"
+            if not is_valid_da_key(c_key): return "Unknown"
+            fmt = "bizboard" if "kakaobiz" in st_low else "display"
+            return f"dm-{funnel}-{fmt}-{c_key}"
+
+        if medium in ["fbig", "meta"]:
+            funnel = get_funnel(seg6)
+            if "catalog" in low: return f"dm-{funnel}-fbigcatalog-{c_key}"
+            if not is_valid_da_key(c_key): return "Unknown"
+            return f"dm-{funnel}-fbig-{c_key}"
+
+        if medium == "kream":
+            funnel = get_funnel(seg6)
+            if not is_valid_da_key(c_key): return "Unknown"
+            return f"dm-{funnel}-Kream-{c_key}"
+
+        if medium == "payco":
+            return "dm-prospecting-payco-alwayson-na-na"
+
+        return "Unknown"
+
+    return "Unknown"
+
+
+# ────────────────────────────────────────────────────────────
+# GA4 날짜 추출
+# ────────────────────────────────────────────────────────────
+def get_date_ga4(content_lines):
+    for line in content_lines:
+        m = re.search(r"#\s*(\d{8})-(\d{8})", str(line))
+        if m:
+            d = m.group(1)
+            return f"{d[:4]}-{d[4:6]}-{d[6:8]}"
+    return None
+
+
+# ────────────────────────────────────────────────────────────
+# GA4 탭
 # ────────────────────────────────────────────────────────────
 with tab3:
     st.header("📈 GA4 검수")
     ga4_files = st.file_uploader(
-        "GA4 Excel 파일들을 드래그하세요.",
-        type=["xlsx"], accept_multiple_files=True, key="t3"
+        "GA4 CSV 파일들을 드래그하세요.",
+        type=["csv"], accept_multiple_files=True, key="t3"
     )
 
     if ga4_files:
         all_ga4 = []
         for f in ga4_files:
-            raw_bytes = f.read()
-            xl = pd.read_excel(io.BytesIO(raw_bytes), header=None)
-            header_row = 6
-            for i, row in xl.iterrows():
-                if "날짜" in str(row.values):
-                    header_row = i
+            raw = f.read()
+            for enc in ["utf-8-sig", "utf-8", "euc-kr", "cp949"]:
+                try:
+                    df = pd.read_csv(io.StringIO(raw.decode(enc)))
                     break
+                except Exception:
+                    continue
+            else:
+                st.error(f"❌ {f.name} 파일 인코딩을 읽을 수 없어요.")
+                continue
 
-            df = pd.read_excel(io.BytesIO(raw_bytes), header=header_row, skiprows=[header_row + 1])
-
+            # 컬럼명 유연하게 매핑
             ren = {}
             for col in df.columns:
                 c = str(col).strip()
-                if c == "날짜":                              ren[col] = "날짜"
-                elif "소스" in c:                            ren[col] = "세션소스"
-                elif "캠페인" in c:                          ren[col] = "세션캠페인"
-                elif "광고 콘텐츠" in c or "광고콘텐츠" in c: ren[col] = "세션광고콘텐츠"
-                elif "검색어" in c:                          ren[col] = "세션검색어"
-                elif "방문수" in c:                          ren[col] = "방문수"
-                elif "참여" in c and "세션" in c:            ren[col] = "참여세션수"
-                elif "세션수" in c or c == "세션":           ren[col] = "세션수"
-                elif "장바구니" in c:                        ren[col] = "장바구니"
-                elif "구매" in c:                            ren[col] = "구매"
-                elif "수익" in c:                            ren[col] = "총수익"
+                if c == "날짜":                                  ren[col] = "날짜"
+                elif "소스" in c:                                ren[col] = "세션소스"
+                elif "캠페인" in c and "시즌" not in c:         ren[col] = "세션캠페인"
+                elif "광고 콘텐츠" in c or "광고콘텐츠" in c:   ren[col] = "세션광고콘텐츠"
+                elif "검색어" in c:                              ren[col] = "세션검색어"
+                elif "참여" in c and "세션" in c:               ren[col] = "참여세션수"
+                elif "Visits" in c or "방문수" in c:            ren[col] = "방문수"
+                elif "세션수" in c or c == "세션":              ren[col] = "세션수"
+                elif "cart" in c.lower() or "장바구니" in c:    ren[col] = "장바구니"
+                elif "Order" in c or "구매" in c:               ren[col] = "구매"
+                elif "Revenue" in c or "수익" in c:             ren[col] = "총수익"
             df.rename(columns=ren, inplace=True)
 
+            # 날짜 정리
             df["날짜"] = pd.to_datetime(
-                df["날짜"].astype(str).str.strip(), errors="coerce"
+                df["날짜"].astype(str).str.strip()
+                .str.replace(r"\.\s*", "-", regex=True).str.rstrip("-"),
+                errors="coerce"
             ).dt.strftime("%Y-%m-%d")
             df = df[df["날짜"].notna()]
 
-            df["AI_제안명"] = df.apply(
-                lambda r: build_campaign_key_ga4(
-                    r["세션캠페인"],
-                    r.get("세션검색어", ""),
-                    r.get("세션광고콘텐츠", "")
-                ), axis=1
-            )
-
-            for col in ["방문수", "참여세션수", "세션수", "장바구니", "구매", "총수익"]:
+            # 수치 콤마 제거
+            for col in ["참여세션수", "방문수", "세션수", "장바구니", "구매", "총수익"]:
                 if col in df.columns:
                     df[col] = pd.to_numeric(
                         df[col].astype(str).str.replace(",", ""), errors="coerce"
                     ).fillna(0)
 
+            # 캠페인명 맵핑
+            df["AI_제안명"] = df.apply(
+                lambda r: build_campaign_key_ga4(
+                    r.get("세션캠페인", ""),
+                    r.get("세션검색어", ""),
+                    r.get("세션광고콘텐츠", "")
+                ), axis=1
+            )
             all_ga4.append(df)
 
-        full_ga4 = pd.concat(all_ga4, ignore_index=True)
-        full_ga4 = full_ga4[full_ga4["AI_제안명"] != "DELETE"].reset_index(drop=True)
-        total = len(full_ga4)
-        unk = (full_ga4["AI_제안명"] == "Unknown").sum()
-        st.info(f"✅ 총 {total}행 | ⚠️ Unknown: {unk}행 ({unk/total*100:.1f}%)")
+        if all_ga4:
+            full_ga4 = pd.concat(all_ga4, ignore_index=True)
+            total = len(full_ga4)
+            unk = (full_ga4["AI_제안명"] == "Unknown").sum()
+            st.info(f"✅ 총 {total}행 | ⚠️ Unknown: {unk}행 ({unk/total*100:.1f}%)")
 
-        cols = ["날짜", "세션캠페인", "참여세션수", "세션수", "장바구니", "구매", "총수익", "AI_제안명"]
-        st.subheader("전체 결과")
-        st.dataframe(full_ga4[[c for c in cols if c in full_ga4.columns]].head(1000))
+            cols = ["날짜", "세션캠페인", "참여세션수", "방문수", "세션수", "장바구니", "구매", "총수익", "AI_제안명"]
+            st.subheader("전체 결과")
+            st.dataframe(full_ga4[[c for c in cols if c in full_ga4.columns]].head(1000))
 
-        unknown_df = full_ga4[full_ga4["AI_제안명"] == "Unknown"]
-        if len(unknown_df) > 0:
-            st.subheader("⚠️ Unknown 목록")
-            st.dataframe(unknown_df[["세션캠페인", "세션검색어", "AI_제안명"]].drop_duplicates().head(200))
+            unknown_df = full_ga4[full_ga4["AI_제안명"] == "Unknown"]
+            if len(unknown_df) > 0:
+                st.subheader("⚠️ Unknown 목록")
+                st.dataframe(unknown_df[["세션캠페인", "세션검색어", "AI_제안명"]].drop_duplicates().head(200))
 
-        st.download_button(
-            "📥 GA4 검수 완료 다운로드",
-            full_ga4.to_csv(index=False).encode("utf-8-sig"),
-            "ga4_checked.csv",
-        )
-
-# ────────────────────────────────────────────────────────────
-with tab4:
-    st.header("🔄 GA4 TSV → Excel 변환")
-    st.caption("GA4에서 다운받은 TSV 파일을 업로드하면 Excel(.xlsx)로 변환해드려요.")
-
-    tsv_files = st.file_uploader(
-        "GA4 TSV 파일들을 드래그하세요.",
-        type=["tsv", "txt"], accept_multiple_files=True, key="t4"
-    )
-
-    if tsv_files:
-        for f in tsv_files:
-            st.divider()
-            st.markdown(f"**📄 {f.name}**")
-            try:
-                raw_bytes = f.read()
-                df = parse_ga4_tsv(raw_bytes)
-
-                st.info(f"✅ {len(df)}행 변환 완료")
-                st.dataframe(df.head(500))
-
-                out = io.BytesIO()
-                with pd.ExcelWriter(out, engine="openpyxl") as writer:
-                    df.to_excel(writer, index=False, sheet_name="GA4 데이터")
-
-                out_name = f.name.rsplit(".", 1)[0] + ".xlsx"
-                st.download_button(
-                    f"📥 {out_name} 다운로드",
-                    data=out.getvalue(),
-                    file_name=out_name,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key=f"dl_{f.name}",
-                )
-
-            except Exception as e:
-                st.error(f"❌ 오류: {e}")
+            st.download_button(
+                "📥 GA4 검수 완료 다운로드",
+                full_ga4.to_csv(index=False).encode("utf-8-sig"),
+                "ga4_checked.csv",
+            )
