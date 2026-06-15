@@ -95,6 +95,10 @@ def build_campaign_key_v21(cid: str) -> str:
                 return f"dm-kakaooptin-kakaopn-{c_key}"
             return "Unknown"
 
+        if medium == "kakaopay":
+            c_key = normalize_campaign_key(parts[8]) if len(parts) > 8 else "alwayson-na-na"
+            return f"dm-kakaooptin-kakaopay-{c_key}"
+
         if medium in ["fbig", "meta"]:
             seg7 = parts[7].lower() if len(parts) > 7 else ""
             funnel = get_funnel(seg7)
@@ -474,6 +478,14 @@ def build_campaign_key_ga4(cid: str, search_term: str = "", ad_content: str = ""
     - SA 기기 구분: 세션광고콘텐츠(ad_content)에서 mo- 시작 여부
     - DA 기기/포맷 구분: 세션검색어(search_term)
     """
+    # 입력값이 Series/list 등으로 들어올 경우 첫 값만 사용 (중복 컬럼 방지용)
+    if isinstance(cid, (pd.Series, list)):
+        cid = cid.iloc[0] if isinstance(cid, pd.Series) else (cid[0] if len(cid) else "")
+    if isinstance(search_term, (pd.Series, list)):
+        search_term = search_term.iloc[0] if isinstance(search_term, pd.Series) else (search_term[0] if len(search_term) else "")
+    if isinstance(ad_content, (pd.Series, list)):
+        ad_content = ad_content.iloc[0] if isinstance(ad_content, pd.Series) else (ad_content[0] if len(ad_content) else "")
+
     if pd.isna(cid) or str(cid).strip() == "":
         return "Unknown"
 
@@ -514,6 +526,9 @@ def build_campaign_key_ga4(cid: str, search_term: str = "", ad_content: str = ""
                 c_key = normalize_campaign_key(parts[8]) if len(parts) > 8 else "alwayson-na-na"
                 return f"dm-kakaooptin-kakaopn-{c_key}"
             return "Unknown"
+        if medium == "kakaopay":
+            c_key = normalize_campaign_key(parts[8]) if len(parts) > 8 else "alwayson-na-na"
+            return f"dm-kakaooptin-kakaopay-{c_key}"
         if medium in ["fbig", "meta"]:
             funnel = get_funnel(seg6)
             raw_key = parts[8] if len(parts) > 8 else ""
@@ -665,22 +680,31 @@ with tab3:
                 st.error(f"❌ {f.name} 파일 인코딩을 읽을 수 없어요.")
                 continue
 
-            # 컬럼명 유연하게 매핑
+            # 컬럼명 유연하게 매핑 (이미 매핑된 타겟이면 건너뜀 - 중복 방지)
             ren = {}
+            used_targets = set()
             for col in df.columns:
                 c = str(col).strip()
-                if c == "날짜":                                  ren[col] = "날짜"
-                elif "소스" in c:                                ren[col] = "세션소스"
-                elif "캠페인" in c and "시즌" not in c:         ren[col] = "세션캠페인"
-                elif "광고 콘텐츠" in c or "광고콘텐츠" in c:   ren[col] = "세션광고콘텐츠"
-                elif "검색어" in c:                              ren[col] = "세션검색어"
-                elif "참여" in c and "세션" in c:               ren[col] = "참여세션수"
-                elif "Visits" in c or "방문수" in c:            ren[col] = "방문수"
-                elif "세션수" in c or c == "세션":              ren[col] = "세션수"
-                elif "cart" in c.lower() or "장바구니" in c:    ren[col] = "장바구니"
-                elif "Order" in c or "구매" in c:               ren[col] = "구매"
-                elif "Revenue" in c or "수익" in c:             ren[col] = "총수익"
+                target = None
+                if c == "날짜":                                  target = "날짜"
+                elif "소스" in c:                                target = "세션소스"
+                elif "세션" in c and "캠페인" in c and "ID" not in c.upper(): target = "세션캠페인"
+                elif "광고 콘텐츠" in c or "광고콘텐츠" in c:   target = "세션광고콘텐츠"
+                elif "검색어" in c:                              target = "세션검색어"
+                elif "참여" in c and "세션" in c:               target = "참여세션수"
+                elif "Visits" in c or "방문수" in c:            target = "방문수"
+                elif "세션수" in c or c == "세션":              target = "세션수"
+                elif "cart" in c.lower() or "장바구니" in c:    target = "장바구니"
+                elif "Order" in c or "구매" in c:               target = "구매"
+                elif "Revenue" in c or "수익" in c:             target = "총수익"
+
+                if target and target not in used_targets:
+                    ren[col] = target
+                    used_targets.add(target)
+
             df.rename(columns=ren, inplace=True)
+            # 매핑 안 된 중복 컬럼 제거 (혹시 원본에 동일 이름 컬럼이 있는 경우)
+            df = df.loc[:, ~df.columns.duplicated()]
 
             # 날짜 정리
             df["날짜"] = pd.to_datetime(
