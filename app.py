@@ -675,10 +675,10 @@ with tab3:
     if ga4_files:
         all_ga4 = []
         for f in ga4_files:
-            raw = f.read()
             if f.name.endswith("xlsx"):
-                df = pd.read_excel(io.BytesIO(raw), header=0)
+                df = pd.read_excel(f, header=0)
             else:
+                raw = f.read()
                 for enc in ["utf-8-sig", "utf-8", "euc-kr", "cp949"]:
                     try:
                         df = pd.read_csv(io.StringIO(raw.decode(enc)))
