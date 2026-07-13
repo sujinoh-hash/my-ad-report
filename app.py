@@ -10,13 +10,19 @@ st.set_page_config(page_title="룰루레몬 자동화 도구 [v21]", layout="wid
 # 캠페인키 매핑
 # ────────────────────────────────────────────────────────────
 CAMPAIGN_KEY_MAP = {
-    "alwayson-na-na":           "alwayson-na-na",
-    "play-spring2026-golf":     "play-spring2026-golf",
-    "yet-spring2026-run":       "yet-spring2026-run",
-    "sn-spring2026-casualdbe":  "sn-spring2026-casual",
-    "sn-spring2026-casualigc":  "sn-spring2026-casual",
-    "bottoms-spring2026-otm":   "bottoms-spring2026-otm",
-    "men-2026-alwayson":        "men-2026-alwayson",
+    "alwayson-na-na":              "alwayson-na-na",
+    "alw-n-n":                     "alwayson-na-na",
+    "alwayson":                    "alwayson-na-na",
+    "play-spring2026-golf":        "play-spring2026-golf",
+    "yet-spring2026-run":          "yet-spring2026-run",
+    "sn-spring2026-casualdbe":     "sn-spring2026-casual",
+    "sn-spring2026-casualigc":     "sn-spring2026-casual",
+    "bottoms-spring2026-otm":      "bottoms-spring2026-otm",
+    "men-2026-alwayson":           "men-2026-alwayson",
+    "apac-summer2026-yoga":        "apac-summer2026-yoga",
+    "global-summer2026-yoga":      "global-summer2026-yoga",
+    "slnsh-summer2026-slnsh":      "slnsh-summer2026-slnsh",
+    "apac-summer2026-sale":        "apac-summer2026-sale",
 }
 
 def normalize_campaign_key(key: str) -> str:
@@ -180,15 +186,15 @@ def build_campaign_key_v21(cid: str) -> str:
 
         # 구글 PMAX
         if medium == "google":
-            if not seg7.startswith("prospecting"): return "Unknown"
             if   "demo-women" in seg7: pmax = "PmaxW"
             elif "demo-men"   in seg7: pmax = "PmaxM"
+            elif "demo"       in seg7: pmax = "PmaxC"
             else:                      pmax = "PmaxC"
-            return f"dm-prospecting-{pmax}-alwayson-na-na"
+            return f"dm-prospecting-{pmax}-{c_key}"
 
         # 유튜브
         if medium == "yt":
-            return f"dm-{get_funnel(seg7)}-Youtube-alwayson-na-na"
+            return f"dm-{get_funnel(seg7)}-Youtube-{c_key}"
 
         # 크리테오
         if medium == "criteo":
@@ -600,10 +606,10 @@ def build_campaign_key_ga4(cid: str, search_term: str = "", ad_content: str = ""
             if   "pmaxw" in st_low: pmax = "PmaxW"
             elif "pmaxm" in st_low: pmax = "PmaxM"
             else:                   pmax = "PmaxC"
-            return f"dm-prospecting-{pmax}-alwayson-na-na"
+            return f"dm-prospecting-{pmax}-{c_key}"
 
         if medium == "yt":
-            return f"dm-{get_funnel(seg6)}-Youtube-alwayson-na-na"
+            return f"dm-{get_funnel(seg6)}-Youtube-{c_key}"
 
         if medium == "criteo":
             return f"dm-{get_funnel(seg6)}-criteo-alwayson-na-na"
@@ -662,41 +668,49 @@ def get_date_ga4(content_lines):
 with tab3:
     st.header("📈 GA4 검수")
     ga4_files = st.file_uploader(
-        "GA4 CSV 파일들을 드래그하세요.",
-        type=["csv"], accept_multiple_files=True, key="t3"
+        "GA4 CSV / Excel 파일들을 드래그하세요.",
+        type=["csv", "xlsx"], accept_multiple_files=True, key="t3"
     )
 
     if ga4_files:
         all_ga4 = []
         for f in ga4_files:
             raw = f.read()
-            for enc in ["utf-8-sig", "utf-8", "euc-kr", "cp949"]:
-                try:
-                    df = pd.read_csv(io.StringIO(raw.decode(enc)))
-                    break
-                except Exception:
-                    continue
+            if f.name.endswith("xlsx"):
+                df = pd.read_excel(io.BytesIO(raw), header=0)
             else:
-                st.error(f"❌ {f.name} 파일 인코딩을 읽을 수 없어요.")
-                continue
+                for enc in ["utf-8-sig", "utf-8", "euc-kr", "cp949"]:
+                    try:
+                        df = pd.read_csv(io.StringIO(raw.decode(enc)))
+                        break
+                    except Exception:
+                        continue
+                else:
+                    st.error(f"❌ {f.name} 파일 인코딩을 읽을 수 없어요.")
+                    continue
 
-            # 컬럼명 유연하게 매핑 (이미 매핑된 타겟이면 건너뜀 - 중복 방지)
+            # 컬럼명 유연하게 매핑 (중복 방지)
             ren = {}
             used_targets = set()
             for col in df.columns:
                 c = str(col).strip()
                 target = None
-                if c == "날짜":                                  target = "날짜"
-                elif "소스" in c:                                target = "세션소스"
-                elif "세션" in c and "캠페인" in c and "ID" not in c.upper(): target = "세션캠페인"
-                elif "광고 콘텐츠" in c or "광고콘텐츠" in c:   target = "세션광고콘텐츠"
-                elif "검색어" in c:                              target = "세션검색어"
-                elif "참여" in c and "세션" in c:               target = "참여세션수"
-                elif "Visits" in c or "방문수" in c:            target = "방문수"
-                elif "세션수" in c or c == "세션":              target = "세션수"
-                elif "cart" in c.lower() or "장바구니" in c:    target = "장바구니"
-                elif "Order" in c or "구매" in c:               target = "구매"
-                elif "Revenue" in c or "수익" in c:             target = "총수익"
+                if c == "날짜":                                                          target = "날짜"
+                elif "소스" in c:                                                        target = "세션소스"
+                elif "세션" in c and "캠페인" in c and "ID" not in c.upper():           target = "세션캠페인"
+                elif "광고 콘텐츠" in c or "광고콘텐츠" in c:                           target = "세션광고콘텐츠"
+                elif "검색어" in c:                                                      target = "세션검색어"
+                elif "가중 참여 세션수" == c:                                            target = "참여세션수"
+                elif "가중 세션수" == c:                                                 target = "세션수"
+                elif "가중 장바구니" in c:                                               target = "장바구니"
+                elif "가중 거래" == c:                                                   target = "구매"
+                elif "가중 구매 수익" == c:                                              target = "총수익"
+                elif "참여" in c and "세션" in c and "가중" not in c:                   target = "참여세션수"
+                elif "Visits" in c or ("방문수" in c and "가중" not in c):              target = "방문수"
+                elif ("세션수" in c or c == "세션") and "가중" not in c:               target = "세션수"
+                elif ("cart" in c.lower() or "장바구니" in c) and "가중" not in c:     target = "장바구니"
+                elif ("Order" in c or ("구매" in c and "수익" not in c)) and "가중" not in c: target = "구매"
+                elif ("Revenue" in c or "수익" in c) and "가중" not in c:              target = "총수익"
 
                 if target and target not in used_targets:
                     ren[col] = target
