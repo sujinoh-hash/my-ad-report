@@ -151,6 +151,7 @@ def build_campaign_key_v21(cid: str) -> str:
                 device_seg = parts[9].lower() if len(parts) > 9 else ""
                 device = "navermo" if device_seg.startswith("mo") else "naverpc"
             if   "keyword-generic"  in seg7: cat = "generic"
+            elif "keyword-comp" in seg7 or "keyword-competitor" in seg7: cat = "Comp"
             elif "keyword-activity" in seg7: cat = "Activity"
             elif "keyword-brand"    in seg7: cat = "brand"
             elif "keyword-product"  in seg7: cat = "product"
@@ -164,6 +165,7 @@ def build_campaign_key_v21(cid: str) -> str:
                 return "Unknown"
             funnel = get_funnel(seg7)
             if   "keyword-generic"  in seg7: cat = "generic"
+            elif "keyword-comp" in seg7 or "keyword-competitor" in seg7: cat = "Comp"
             elif "keyword-activity" in seg7: cat = "Activity"
             elif "keyword-brand"    in seg7: cat = "brand"
             elif "keyword-product"  in seg7: cat = "product"
@@ -188,13 +190,12 @@ def build_campaign_key_v21(cid: str) -> str:
         if medium == "google":
             if   "demo-women" in seg7: pmax = "PmaxW"
             elif "demo-men"   in seg7: pmax = "PmaxM"
-            elif "demo"       in seg7: pmax = "PmaxC"
             else:                      pmax = "PmaxC"
-            return f"dm-prospecting-{pmax}-{c_key}"
+            return f"dm-prospecting-{pmax}-alwayson-na-na"
 
         # 유튜브
         if medium == "yt":
-            return f"dm-{get_funnel(seg7)}-Youtube-{c_key}"
+            return f"dm-{get_funnel(seg7)}-Youtube-alwayson-na-na"
 
         # 크리테오
         if medium == "criteo":
@@ -202,18 +203,18 @@ def build_campaign_key_v21(cid: str) -> str:
 
         # 카카오 키워드 광고 (kakao-kw) → 캠페인키 alwayson-na-na 고정
         if medium == "kakao-kw":
-            return f"dm-{get_funnel(seg7)}-kakaokw-brand-alwayson-na-na"
+            return f"dm-{get_funnel(seg7)}-kakaokw-alwayson-na-na"
 
-        # 네이버 GFA / gfacatalog
+        # 네이버 GFA / gfacatalog / specialda
         if medium == "naver":
-            funnel = get_funnel(seg7)  # 1번: GFA는 prospecting/retargeting 그대로
+            funnel = get_funnel(seg7)
             if "catalog" in low:
                 return f"dm-{funnel}-gfacatalog-alwayson-na-na"
             if not is_valid_da_key(c_key): return "Unknown"
             return f"dm-{funnel}-GFA-{c_key}"
 
-        # 카카오 DA
-        if medium == "kakao":
+        # 메타 DA (fbig / fbigm3 / fbigleadgen / fbigcatalog)
+        if medium in ["fbig", "meta"]:
             funnel = get_funnel(seg7)
             if "catalog" in low:
                 return f"dm-{funnel}-kakaocatalog-alwayson-na-na"
@@ -575,6 +576,7 @@ def build_campaign_key_ga4(cid: str, search_term: str = "", ad_content: str = ""
                 funnel = get_funnel(seg6, naver=True)
                 device = "navermo" if ac_low.startswith("mo-") else "naverpc"
             if   "keyword-generic"  in seg6: cat = "generic"
+            elif "keyword-comp" in seg6 or "keyword-competitor" in seg6: cat = "Comp"
             elif "keyword-activity" in seg6: cat = "Activity"
             elif "keyword-brand"    in seg6: cat = "brand"
             elif "keyword-product"  in seg6: cat = "product"
@@ -585,6 +587,7 @@ def build_campaign_key_ga4(cid: str, search_term: str = "", ad_content: str = ""
             funnel = get_funnel(seg6)
             device_g = "mo" if ac_low.startswith("mo-") else "pc"
             if   "keyword-generic"  in seg6: cat = "generic"
+            elif "keyword-comp" in seg6 or "keyword-competitor" in seg6: cat = "Comp"
             elif "keyword-activity" in seg6: cat = "Activity"
             elif "keyword-brand"    in seg6: cat = "brand"
             elif "keyword-product"  in seg6: cat = "product"
@@ -606,20 +609,21 @@ def build_campaign_key_ga4(cid: str, search_term: str = "", ad_content: str = ""
             if   "pmaxw" in st_low: pmax = "PmaxW"
             elif "pmaxm" in st_low: pmax = "PmaxM"
             else:                   pmax = "PmaxC"
-            return f"dm-prospecting-{pmax}-{c_key}"
+            return f"dm-prospecting-{pmax}-alwayson-na-na"
 
         if medium == "yt":
-            return f"dm-{get_funnel(seg6)}-Youtube-{c_key}"
+            return f"dm-{get_funnel(seg6)}-Youtube-alwayson-na-na"
 
         if medium == "criteo":
             return f"dm-{get_funnel(seg6)}-criteo-alwayson-na-na"
 
         if medium == "kakao-kw":
-            return f"dm-{get_funnel(seg6)}-kakaokw-brand-alwayson-na-na"
+            return f"dm-{get_funnel(seg6)}-kakaokw-alwayson-na-na"
 
         if medium == "naver":
             funnel = get_funnel(seg6)
             if "catalog" in low: return f"dm-{funnel}-gfacatalog-alwayson-na-na"
+            if "nospspecialda" in st_low: return f"dm-{funnel}-specialda-{c_key}"
             if not is_valid_da_key(c_key): return "Unknown"
             return f"dm-{funnel}-GFA-{c_key}"
 
@@ -635,6 +639,8 @@ def build_campaign_key_ga4(cid: str, search_term: str = "", ad_content: str = ""
             funnel = get_funnel(seg6)
             if "catalog" in low: return f"dm-{funnel}-fbigcatalog-{c_key}"
             if not is_valid_da_key(c_key): return "Unknown"
+            if "fbigm3" in st_low: return f"dm-{funnel}-fbigm3-{c_key}"
+            if "fbigleadgen" in st_low: return f"dm-{funnel}-fbigleadgen-{c_key}"
             return f"dm-{funnel}-fbig-{c_key}"
 
         if medium == "kream":
